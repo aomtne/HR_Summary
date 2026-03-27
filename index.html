@@ -246,6 +246,12 @@
   <div class="modal">
     <h3>確認刪除</h3>
     <p id="deleteModalMsg"></p>
+    <div class="input-group" style="margin-top:12px;">
+      <label style="color:#c0392b;">請輸入密碼以確認刪除</label>
+      <input type="password" id="deletePassword" placeholder="請輸入密碼" style="width:100%;"
+             onkeydown="if(event.key==='Enter')confirmDelete();">
+    </div>
+    <p id="deletePwdError" style="color:#e74c3c;font-size:12px;margin-top:4px;display:none;">密碼錯誤，請重新輸入</p>
     <div class="actions">
       <button class="btn btn-danger" onclick="confirmDelete()">刪除</button>
       <button class="btn" style="background:#ccc;" onclick="closeDeleteModal()">取消</button>
@@ -560,16 +566,28 @@ function saveAssignments() {
   localStorage.setItem('ndt_assignments', JSON.stringify(assignments));
 }
 
+var DELETE_PASSWORD = '0918938734';
+
 function removeAssignment(id) {
   pendingDeleteId = id;
   var a = assignments.find(function(x) { return x.id === id; });
   if (!a) return;
   document.getElementById('deleteModalMsg').textContent =
     '確定要刪除「' + a.person + '」的「' + a.category + '」派工 (' + a.start + ' ~ ' + a.end + ') 嗎？';
+  document.getElementById('deletePassword').value = '';
+  document.getElementById('deletePwdError').style.display = 'none';
   document.getElementById('deleteModal').classList.add('active');
+  setTimeout(function() { document.getElementById('deletePassword').focus(); }, 100);
 }
 
 function confirmDelete() {
+  var pwd = document.getElementById('deletePassword').value;
+  if (pwd !== DELETE_PASSWORD) {
+    document.getElementById('deletePwdError').style.display = 'block';
+    document.getElementById('deletePassword').value = '';
+    document.getElementById('deletePassword').focus();
+    return;
+  }
   assignments = assignments.filter(function(a) { return a.id !== pendingDeleteId; });
   saveAssignments();
   renderAll();
@@ -579,16 +597,22 @@ function confirmDelete() {
 
 function closeDeleteModal() {
   document.getElementById('deleteModal').classList.remove('active');
+  document.getElementById('deletePassword').value = '';
+  document.getElementById('deletePwdError').style.display = 'none';
   pendingDeleteId = null;
 }
 
 function clearAllAssignments() {
-  if (confirm('確定要清除所有派工紀錄嗎？')) {
-    assignments = [];
-    saveAssignments();
-    renderAll();
-    autoCloudSave();
+  var pwd = prompt('此操作將清除所有派工紀錄，請輸入密碼確認：');
+  if (pwd === null) return;
+  if (pwd !== DELETE_PASSWORD) {
+    alert('密碼錯誤！');
+    return;
   }
+  assignments = [];
+  saveAssignments();
+  renderAll();
+  autoCloudSave();
 }
 
 // ============== RENDERING ==============
