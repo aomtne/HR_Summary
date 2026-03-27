@@ -806,10 +806,18 @@ function renderCalendar() {
 // ============== INIT ==============
 // Restore cloud config
 (function() {
-  var savedUrl = localStorage.getItem('ndt_webAppUrl') || '';
+  var savedUrl = localStorage.getItem('ndt_webAppUrl') || 'https://script.google.com/macros/s/AKfycby0oIervhkmGpopOo12Bd43OuuMVc5T5kIPAA_QqZDwVU-M-QAN-86VlUeCZo5r-eoB6Q/exec';
   document.getElementById('webAppUrl').value = savedUrl;
   document.getElementById('autoSyncCheck').checked = localStorage.getItem('ndt_autoSync') === '1';
   updateSyncBadge();
+  
+  // 進入頁面時自動從雲端載入（延遲 500ms 確保頁面完全加載）
+  setTimeout(function() {
+    if (savedUrl && savedUrl.trim() !== '') {
+      console.log('✓ 自動從雲端載入數據...');
+      cloudLoad();
+    }
+  }, 500);
 })();
 
 renderAll();
