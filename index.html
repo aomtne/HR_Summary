@@ -848,50 +848,78 @@ function getWeekRanges() {
   };
 }
 
-// 從派工記錄中提取本週和下週的工項和人員
+// 從派工記錄中提取本週和下週的工項和人員（按工作項目分組）
 function extractScheduleData() {
   var ranges = getWeekRanges();
   
-  // 本週數據
-  var thisWeekPersons = new Set();
-  var thisWeekCount = 0;
+  // 本週數據 - 按工作項目分組
+  var thisWeekJobs = [];
+  var thisWeekPersonsSet = new Set();
   
   assignments.forEach(function(a) {
-    // 檢查派工是否與本週重疊
     if (a.start <= ranges.thisWeek.end && a.end >= ranges.thisWeek.start) {
-      thisWeekPersons.add(a.person);
-      thisWeekCount++;
+      thisWeekPersonsSet.add(a.person);
+      
+      // 尋找是否已存在該工作項目
+      var existingJob = thisWeekJobs.find(function(j) { 
+        return j.category === a.category && j.start === a.start && j.end === a.end;
+      });
+      
+      if (existingJob) {
+        existingJob.persons.push(a.person);
+      } else {
+        thisWeekJobs.push({
+          category: a.category,
+          note: a.note,
+          start: a.start,
+          end: a.end,
+          persons: [a.person]
+        });
+      }
     }
   });
   
-  // 下週數據
-  var nextWeekPersons = new Set();
-  var nextWeekCount = 0;
+  // 下週數據 - 按工作項目分組
+  var nextWeekJobs = [];
+  var nextWeekPersonsSet = new Set();
   
   assignments.forEach(function(a) {
-    // 檢查派工是否與下週重疊
     if (a.start <= ranges.nextWeek.end && a.end >= ranges.nextWeek.start) {
-      nextWeekPersons.add(a.person);
-      nextWeekCount++;
+      nextWeekPersonsSet.add(a.person);
+      
+      var existingJob = nextWeekJobs.find(function(j) { 
+        return j.category === a.category && j.start === a.start && j.end === a.end;
+      });
+      
+      if (existingJob) {
+        existingJob.persons.push(a.person);
+      } else {
+        nextWeekJobs.push({
+          category: a.category,
+          note: a.note,
+          start: a.start,
+          end: a.end,
+          persons: [a.person]
+        });
+      }
     }
   });
   
-  // 計算剩餘可用人數
   var totalPersons = activePersonnel.length;
-  var thisWeekAvailable = totalPersons - thisWeekPersons.size;
-  var nextWeekAvailable = totalPersons - nextWeekPersons.size;
   
   return {
     thisWeek: {
-      itemCount: thisWeekCount,
-      assignedPersons: Array.from(thisWeekPersons),
-      availablePersons: thisWeekAvailable,
+      itemCount: thisWeekJobs.length,
+      jobs: thisWeekJobs,
+      assignedPersons: Array.from(thisWeekPersonsSet),
+      availablePersons: totalPersons - thisWeekPersonsSet.size,
       date: ranges.thisWeek
     },
     nextWeek: {
-      itemCount: nextWeekCount,
-      assignedPersons: Array.from(nextWeekPersons),
-      availablePersons: nextWeekAvailable,
+      itemCount: nextWeekJobs.length,
+      jobs: nextWeekJobs,
+      assignedPersons: Array.from(nextWeekPersonsSet),
+      availablePersons: totalPersons - nextWeekPersonsSet.size,
       date: ranges.nextWeek
     }
   };
@@ -905,6 +933,7 @@ function saveScheduleDataToLocalStorage() {
     week: 'thisWeek',
     title: '本週排程',
     itemCount: data.thisWeek.itemCount,
+    jobs: data.thisWeek.jobs,
     assignedPersons: data.thisWeek.assignedPersons,
     availablePersons: data.thisWeek.availablePersons,
     dateRange: data.thisWeek.date,
@@ -915,13 +944,14 @@ function saveScheduleDataToLocalStorage() {
     week: 'nextWeek',
     title: '下週預定排程',
     itemCount: data.nextWeek.itemCount,
+    jobs: data.nextWeek.jobs,
     assignedPersons: data.nextWeek.assignedPersons,
     availablePersons: data.nextWeek.availablePersons,
     dateRange: data.nextWeek.date,
     lastUpdated: new Date().toISOString()
   }));
   
-  console.log('✅ 排程數據已保存到 LocalStorage');
+  console.log('✅ 派工數據已保存到 LocalStorage');
 }
 
 // 初始化時保存排程數據
