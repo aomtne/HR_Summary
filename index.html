@@ -822,6 +822,82 @@ function renderCalendar() {
 
 renderAll();
 
+// ======================== Google Sheets 自動同步 ========================
+function getGSWeekRanges() {
+  var today = new Date();
+  var day = today.getDay();
+  var thisMonday = new Date(today);
+  thisMonday.setDate(today.getDate() - (day === 0 ? 6 : day - 1));
+  var thisSunday = new Date(thisMonday);
+  thisSunday.setDate(thisMonday.getDate() + 6);
+  var nextMonday = new Date(thisSunday);
+  nextMonday.setDate(thisSunday.getDate() + 1);
+  var nextSunday = new Date(nextMonday);
+  nextSunday.setDate(nextMonday.getDate() + 6);
+  return {
+    thisWeek: { start: dateStr(thisMonday.getFullYear(), thisMonday.getMonth(), thisMonday.getDate()), end: dateStr(thisSunday.getFullYear(), thisSunday.getMonth(), thisSunday.getDate()) },
+    nextWeek: { start: dateStr(nextMonday.getFullYear(), nextMonday.getMonth(), nextMonday.getDate()), end: dateStr(nextSunday.getFullYear(), nextSunday.getMonth(), nextSunday.getDate()) }
+  };
+}
+
+function fetchFromGoogleSheets() {
+  var webAppUrl = document.getElementById('webAppUrl').value;
+  if (!webAppUrl || webAppUrl.trim() === '') {
+    console.log('Web App URL 未設置');
+    return;
+  }
+  var url = webAppUrl + (webAppUrl.indexOf('?') === -1 ? '?' : '&') + 'action=getAllAssignments&t=' + Date.now();
+  fetch(url).then(function(response) { return response.json(); }).then(function(data) {
+    console.log('✅ 從 Google Sheets 成功取得派工數據: ' + (data.assignments ? data.assignments.length : 0) + ' 條');
+    convertGoogleSheetsToLocal(data);
+    extractScheduleFromLocalData();
+  }).catch(function(error) { console.error('❌ 從 Google Sheets 取得數據失敗:', error); });
+}
+
+function convertGoogleSheetsToLocal(sheetData) {
+  if (!sheetData || !sheetData.assignments) { console.log('無效的 Google Sheets 數據'); return; }
+  assignments = [];
+  sheetData.assignments.forEach(function(row) {
+    var startDate = row.startDate || row.start;
+    var endDate = row.endDate || row.end;
+    if (startDate && startDate.includes('/')) { startDate = startDate.replace(/\//g, '-'); }
+    if (endDate && endDate.includes('/')) { endDate = endDate.replace(/\//g, '-'); }
+    var assignment = { id: row.id || Math.random().toString(36).substr(2, 9), person: row.person || row.name, category: row.category || row.jobType, start: startDate, end: endDate, note: row.note || row.remark };
+    assignments.push(assignment);
+  });
+  console.log('✅ 已轉換 ' + assignments.length + ' 條派工記錄');
+  localStorage.setItem('ndt_assignments', JSON.stringify(assignments));
+}
+
+function extractScheduleFromLocalData() {
+  if (!assignments || assignments.length === 0) { console.log('無派工數據'); return; }
+  var ranges = getGSWeekRanges();
+  var thisWeekJobs = []; var thisWeekPersons = new Set();
+  assignments.forEach(function(a) {
+    if (a.start && a.end && a.start <= ranges.thisWeek.end && a.end >= ranges.thisWeek.start) {
+      thisWeekPersons.add(a.person);
+      var existingJob = thisWeekJobs.find(function(j) { return j.category === a.category && j.start === a.start && j.end === a.end; });
+      if (existingJob) { if (existingJob.persons.indexOf(a.person) === -1) existingJob.persons.push(a.person); } else { thisWeekJobs.push({ category: a.category, note: a.note, start: a.start, end: a.end, persons: [a.person] }); }
+    }
+  });
+  var nextWeekJobs = []; var nextWeekPersons = new Set();
+  assignments.forEach(function(a) {
+    if (a.start && a.end && a.start <= ranges.nextWeek.end && a.end >= ranges.nextWeek.start) {
+      nextWeekPersons.add(a.person);
+      var existingJob = nextWeekJobs.find(function(j) { return j.category === a.category && j.start === a.start && j.end === a.end; });
+      if (existingJob) { if (existingJob.persons.indexOf(a.person) === -1) existingJob.persons.push(a.person); } else { nextWeekJobs.push({ category: a.category, note: a.note, start: a.start, end: a.end, persons: [a.person] }); }
+    }
+  });
+  var totalPersons = activePersonnel.length;
+  localStorage.setItem('scheduleData_thisWeek', JSON.stringify({ week: 'thisWeek', title: '本週排程', itemCount: thisWeekJobs.length, jobs: thisWeekJobs, assignedPersons: Array.from(thisWeekPersons), availablePersons: totalPersons - thisWeekPersons.size, dateRange: ranges.thisWeek, lastUpdated: new Date().toISOString(), source: 'google_sheets' }));
+  localStorage.setItem('scheduleData_nextWeek', JSON.stringify({ week: 'nextWeek', title: '下週預定排程', itemCount: nextWeekJobs.length, jobs: nextWeekJobs, assignedPersons: Array.from(nextWeekPersons), availablePersons: totalPersons - nextWeekPersons.size, dateRange: ranges.nextWeek, lastUpdated: new Date().toISOString(), source: 'google_sheets' }));
+  console.log('✅ 本週派工: ' + thisWeekJobs.length + ' 項, ' + thisWeekPersons.size + ' 人');
+  console.log('✅ 下週派工: ' + nextWeekJobs.length + ' 項, ' + nextWeekPersons.size + ' 人');
+}
+
+setInterval(function() { console.log('⏰ 自動從 Google Sheets 同步派工數據...'); fetchFromGoogleSheets(); }, 5 * 60 * 1000);
+setTimeout(function() { console.log('📥 初始化：從 Google Sheets 同步派工數據...'); fetchFromGoogleSheets(); }, 1000);
+
 // ======================== 為主頁提供排程數據 ========================
 // 計算本週和下週的日期範圍
 function getWeekRanges() {
