@@ -1,0 +1,776 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>NDT 人力運用情形</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: "Microsoft JhengHei", "微軟正黑體", sans-serif; background: #f0f2f5; padding: 10px; font-size: 13px; }
+
+  .header { background: linear-gradient(135deg, #1a5276, #2980b9); color: #fff; padding: 14px 24px; border-radius: 8px; margin-bottom: 12px; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px; }
+  .header h1 { font-size: 20px; letter-spacing: 1px; }
+  .header .month-nav { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+  .header .month-nav button { background: rgba(255,255,255,0.2); border: none; color: #fff; padding: 6px 14px; border-radius: 4px; cursor: pointer; font-size: 14px; }
+  .header .month-nav button:hover { background: rgba(255,255,255,0.35); }
+  .header .month-label { font-size: 18px; font-weight: bold; min-width: 140px; text-align: center; }
+
+  .panel { background: #fff; border-radius: 8px; box-shadow: 0 1px 4px rgba(0,0,0,0.1); padding: 16px; margin-bottom: 12px; }
+  .panel-title { font-size: 15px; font-weight: bold; color: #1a5276; margin-bottom: 10px; border-bottom: 2px solid #2980b9; padding-bottom: 6px; display: flex; justify-content: space-between; align-items: center; }
+
+  .check-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(100px, 1fr)); gap: 4px; max-height: 200px; overflow-y: auto; }
+  .check-grid label { display: flex; align-items: center; gap: 4px; padding: 3px 6px; border-radius: 4px; cursor: pointer; font-size: 12px; white-space: nowrap; }
+  .check-grid label:hover { background: #eaf2f8; }
+  .check-grid label.checked { background: #d4efdf; font-weight: bold; }
+
+  .btn { padding: 6px 16px; border: none; border-radius: 4px; cursor: pointer; font-size: 13px; font-weight: bold; }
+  .btn-sm { padding: 3px 12px; font-size: 12px; }
+  .btn-primary { background: #2980b9; color: #fff; }
+  .btn-primary:hover { background: #1a6ea0; }
+  .btn-danger { background: #e74c3c; color: #fff; }
+  .btn-danger:hover { background: #c0392b; }
+  .btn-success { background: #27ae60; color: #fff; }
+  .btn-success:hover { background: #1e8449; }
+  .btn-warning { background: #f39c12; color: #fff; }
+  .btn-warning:hover { background: #d68910; }
+  .btn-group { display: flex; gap: 8px; margin-top: 10px; flex-wrap: wrap; }
+
+  .assign-section { display: flex; flex-wrap: wrap; gap: 12px; align-items: flex-start; }
+  .assign-left { flex: 1; min-width: 300px; }
+  .assign-right { display: flex; flex-direction: column; gap: 8px; min-width: 200px; }
+  .input-group { display: flex; flex-direction: column; gap: 3px; }
+  .input-group label { font-size: 12px; color: #555; font-weight: bold; }
+  .input-group select, .input-group input { padding: 5px 8px; border: 1px solid #ccc; border-radius: 4px; font-size: 13px; font-family: inherit; }
+  .input-group input[type="date"] { min-width: 140px; }
+  .input-group input[type="text"], .input-group input[type="url"] { min-width: 180px; }
+  .date-row { display: flex; gap: 10px; flex-wrap: wrap; align-items: flex-end; }
+
+  .legend { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px; }
+  .legend-item { display: flex; align-items: center; gap: 4px; font-size: 11px; }
+  .legend-color { width: 16px; height: 12px; border-radius: 2px; border: 1px solid #ccc; }
+
+  .table-wrap { overflow-x: auto; margin-top: 8px; }
+  table { border-collapse: collapse; width: 100%; min-width: 900px; }
+  th, td { border: 1px solid #ccc; text-align: center; padding: 2px 3px; font-size: 11px; min-width: 32px; }
+  th { background: #2c3e50; color: #fff; position: sticky; top: 0; z-index: 2; }
+  th.name-col { min-width: 70px; position: sticky; left: 0; z-index: 3; background: #1a5276; }
+  td.name-cell { position: sticky; left: 0; z-index: 1; background: #fff; font-weight: bold; white-space: nowrap; text-align: left; padding-left: 6px; }
+  td.name-cell.odd { background: #f8f9fa; }
+  tr:nth-child(odd) td:not(.name-cell):not(.summary-cell) { background: #fafafa; }
+  tr:hover td:not(.summary-cell) { background: #eaf2f8 !important; }
+
+  th.weekend { background: #7f8c8d; }
+  td.weekend { background: #f5f0e8 !important; }
+
+  th.holiday { background: #c0392b !important; color: #fff; }
+  td.holiday { background: #fde8e8 !important; }
+
+  tr.summary-row td { font-weight: bold; background: #fef9e7 !important; }
+  tr.summary-row.remaining td { background: #eafaf1 !important; }
+  tr.summary-row td.summary-label { text-align: left; padding-left: 6px; position: sticky; left: 0; z-index: 1; }
+
+  td.assigned { color: #fff; font-size: 10px; font-weight: bold; cursor: pointer; position: relative; }
+  td.assigned:hover { opacity: 0.85; }
+
+  td.today { box-shadow: inset 0 0 0 2px #e74c3c; }
+  th.today { background: #e74c3c !important; }
+
+  .modal-overlay { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.4); z-index: 1000; justify-content: center; align-items: center; }
+  .modal-overlay.active { display: flex; }
+  .modal { background: #fff; border-radius: 8px; padding: 20px; max-width: 400px; width: 90%; }
+  .modal h3 { margin-bottom: 12px; }
+  .modal .actions { display: flex; gap: 8px; justify-content: flex-end; margin-top: 16px; }
+
+  .assignment-list { max-height: 200px; overflow-y: auto; margin-top: 8px; }
+  .assignment-item { display: flex; align-items: center; justify-content: space-between; padding: 4px 8px; border-radius: 4px; margin-bottom: 3px; font-size: 12px; }
+  .assignment-item .del-x { cursor: pointer; color: #e74c3c; font-weight: bold; margin-left: 8px; }
+  .assignment-item .del-x:hover { color: #c0392b; }
+
+  /* Cloud sync status */
+  .sync-bar { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+  .sync-status { font-size: 12px; padding: 3px 10px; border-radius: 12px; display: inline-flex; align-items: center; gap: 4px; }
+  .sync-status.connected { background: #d4efdf; color: #1e8449; }
+  .sync-status.disconnected { background: #f9e0e0; color: #c0392b; }
+  .sync-status.syncing { background: #fef3cd; color: #856404; }
+
+  /* Cloud config */
+  .cloud-config { display: flex; gap: 10px; align-items: flex-end; flex-wrap: wrap; }
+  .cloud-config input[type="url"] { width: 400px; max-width: 100%; }
+  .cloud-info { font-size: 11px; color: #777; margin-top: 6px; line-height: 1.6; }
+  .cloud-info code { background: #f0f0f0; padding: 1px 5px; border-radius: 3px; font-size: 11px; }
+
+  @media print {
+    body { padding: 0; background: #fff; }
+    .panel:not(.calendar-panel), .header .month-nav button { display: none; }
+    .header { background: #1a5276 !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+    th, td.assigned, td.holiday, th.holiday { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  }
+</style>
+</head>
+<body>
+
+<!-- Header -->
+<div class="header">
+  <h1>NDT 人力運用情形</h1>
+  <div class="month-nav">
+    <button onclick="changeMonth(-1)">◀ 上月</button>
+    <span class="month-label" id="monthLabel"></span>
+    <button onclick="changeMonth(1)">下月 ▶</button>
+    <button onclick="goToday()" style="margin-left:10px;">今天</button>
+    <button onclick="window.print()" style="margin-left:10px;">🖨 列印</button>
+  </div>
+</div>
+
+<!-- Cloud Sync Panel -->
+<div class="panel" id="cloudPanel">
+  <div class="panel-title">
+    <span>☁️ Google Sheets 雲端同步
+      <span id="syncStatusBadge" class="sync-status disconnected">未連線</span>
+    </span>
+    <button class="btn btn-primary btn-sm" onclick="togglePanel('cloudContent', this)">收合 ▲</button>
+  </div>
+  <div id="cloudContent">
+    <div class="cloud-config">
+      <div class="input-group" style="flex:1;min-width:280px;">
+        <label>Google Apps Script Web App 網址</label>
+        <input type="url" id="webAppUrl" placeholder="https://script.google.com/macros/s/XXXXXX/exec"
+               oninput="saveWebAppUrl()">
+      </div>
+      <div class="sync-bar">
+        <button class="btn btn-success btn-sm" onclick="cloudSave()" id="btnCloudSave">⬆ 上傳至雲端</button>
+        <button class="btn btn-primary btn-sm" onclick="cloudLoad()" id="btnCloudLoad">⬇ 從雲端載入</button>
+        <button class="btn btn-warning btn-sm" onclick="testConnection()">🔗 測試連線</button>
+      </div>
+    </div>
+    <div id="syncLog" style="font-size:11px;color:#555;margin-top:6px;max-height:60px;overflow-y:auto;"></div>
+    <div class="cloud-info">
+      <strong>設定說明：</strong>
+      ① 新建 Google Sheet → ② 擴充功能 → Apps Script → ③ 貼上程式碼 → ④ 部署為網路應用程式 → ⑤ 複製網址貼到上方欄位<br>
+      程式碼檔案：<code>Google_Apps_Script_貼上此程式碼.js</code>（與此 HTML 同一資料夾）<br>
+      <label style="margin-top:4px;display:inline-flex;align-items:center;gap:4px;cursor:pointer;">
+        <input type="checkbox" id="autoSyncCheck" onchange="saveAutoSync()"> 自動同步（每次新增/刪除派工時自動上傳）
+      </label>
+    </div>
+  </div>
+</div>
+
+<!-- Personnel Management -->
+<div class="panel" id="personnelPanel">
+  <div class="panel-title">
+    <span>👥 人員名單管理 <span style="font-weight:normal;font-size:12px;color:#777;">(勾選 = 列入工作人員)</span></span>
+    <button class="btn btn-primary btn-sm" onclick="togglePanel('personnelContent', this)">收合 ▲</button>
+  </div>
+  <div id="personnelContent">
+    <div class="check-grid" id="personnelGrid"></div>
+    <div class="btn-group">
+      <button class="btn btn-primary" onclick="confirmPersonnel()">✔ 確定更新名單</button>
+      <button class="btn btn-warning" onclick="selectAllPersonnel(true)">全選</button>
+      <button class="btn btn-danger" onclick="selectAllPersonnel(false)">全不選</button>
+    </div>
+  </div>
+</div>
+
+<!-- Assignment Input -->
+<div class="panel" id="assignPanel">
+  <div class="panel-title">
+    <span>📋 派工輸入</span>
+    <button class="btn btn-primary btn-sm" onclick="togglePanel('assignContent', this)">收合 ▲</button>
+  </div>
+  <div id="assignContent">
+    <div class="assign-section">
+      <div class="assign-left">
+        <div class="input-group" style="margin-bottom:6px;">
+          <label>選擇人員 (勾選，可複選)</label>
+          <div class="btn-group" style="margin-top:2px;margin-bottom:4px;">
+            <button class="btn btn-warning btn-sm" onclick="selectAllAssignPerson(true)">全選</button>
+            <button class="btn btn-danger btn-sm" onclick="selectAllAssignPerson(false)">全不選</button>
+          </div>
+          <div class="check-grid" id="assignPersonGrid" style="max-height:140px;"></div>
+        </div>
+      </div>
+      <div class="assign-right">
+        <div class="date-row">
+          <div class="input-group">
+            <label>開始日期</label>
+            <input type="date" id="assignStart">
+          </div>
+          <div class="input-group">
+            <label>結束日期</label>
+            <input type="date" id="assignEnd">
+          </div>
+        </div>
+        <div class="input-group">
+          <label>工作項目</label>
+          <select id="assignCategory">
+            <option value="大修工作">大修工作</option>
+            <option value="機械工場委託單">機械工場委託單</option>
+            <option value="特性試驗校正">特性試驗校正</option>
+            <option value="外部工作">外部工作</option>
+            <option value="長度力量委託單">長度力量委託單</option>
+            <option value="支援中、南分處">支援中、南分處</option>
+            <option value="教育訓練">教育訓練</option>
+            <option value="請假">請假</option>
+            <option value="其他">其他</option>
+          </select>
+        </div>
+        <div class="input-group">
+          <label>備註說明</label>
+          <input type="text" id="assignNote" placeholder="例：大潭CC#7大修">
+        </div>
+        <button class="btn btn-success" onclick="addAssignment()" style="align-self:flex-start;">➕ 新增派工</button>
+      </div>
+    </div>
+    <div class="legend" id="legend"></div>
+  </div>
+</div>
+
+<!-- Assignment List -->
+<div class="panel">
+  <div class="panel-title">
+    <span>📝 目前派工紀錄 <span style="font-weight:normal;font-size:12px;color:#777;" id="assignCountLabel"></span></span>
+    <button class="btn btn-danger btn-sm" onclick="clearAllAssignments()">清除全部</button>
+  </div>
+  <div class="assignment-list" id="assignmentList"></div>
+</div>
+
+<!-- Calendar -->
+<div class="panel calendar-panel">
+  <div class="panel-title"><span>📅 月曆總覽</span></div>
+  <div class="table-wrap">
+    <table id="calendarTable"></table>
+  </div>
+</div>
+
+<!-- Delete Modal -->
+<div class="modal-overlay" id="deleteModal">
+  <div class="modal">
+    <h3>確認刪除</h3>
+    <p id="deleteModalMsg"></p>
+    <div class="actions">
+      <button class="btn btn-danger" onclick="confirmDelete()">刪除</button>
+      <button class="btn" style="background:#ccc;" onclick="closeDeleteModal()">取消</button>
+    </div>
+  </div>
+</div>
+
+<script>
+// ============== DATA ==============
+var ALL_PERSONNEL = [
+  "蔡武哲","林炳宏","林宏儒","林士瑄","陳柏均","黃鴻鈞","李家緯",
+  "吳志成","黃嵩捷","楊竣宇","鍾銘軒","李振誠","陳政瑋","吳宇軒",
+  "徐振華","呂侑儒","李晨鍠","張謙凌","邱重豪","張志玄",
+  "李昇晉","張瑋岑","蔡瀚承","朱彥豪","陳擎","吳祖年","陳廉淞","陳思豪"
+];
+
+var CATEGORY_COLORS = {
+  "大修工作":      "#2980b9",
+  "機械工場委託單": "#8e44ad",
+  "特性試驗校正":  "#27ae60",
+  "外部工作":      "#e67e22",
+  "長度力量委託單": "#16a085",
+  "支援中、南分處": "#d35400",
+  "教育訓練":      "#2c3e50",
+  "請假":          "#95a5a6",
+  "其他":          "#7f8c8d"
+};
+
+// ============== TAIWAN NATIONAL HOLIDAYS ==============
+function getTaiwanHolidays(year) {
+  var holidays = {};
+  var fixed = [
+    ["01-01", "元旦"],
+    ["02-28", "和平紀念日"],
+    ["04-04", "兒童節"],
+    ["04-05", "清明節"],
+    ["05-01", "勞動節"],
+    ["10-10", "國慶日"],
+  ];
+  fixed.forEach(function(item) { holidays[year + '-' + item[0]] = item[1]; });
+
+  if (year === 2025) {
+    holidays["2025-01-27"] = "春節(彈性)";
+    holidays["2025-01-28"] = "除夕";
+    holidays["2025-01-29"] = "春節初一";
+    holidays["2025-01-30"] = "春節初二";
+    holidays["2025-01-31"] = "春節初三";
+    holidays["2025-02-01"] = "春節(彈性)";
+    holidays["2025-05-31"] = "端午節";
+    holidays["2025-05-30"] = "端午節(彈性)";
+    holidays["2025-10-06"] = "中秋節";
+    holidays["2025-10-03"] = "中秋節(彈性)";
+  }
+  if (year === 2026) {
+    holidays["2026-02-16"] = "除夕";
+    holidays["2026-02-17"] = "春節初一";
+    holidays["2026-02-18"] = "春節初二";
+    holidays["2026-02-19"] = "春節初三";
+    holidays["2026-02-20"] = "春節(彈性)";
+    holidays["2026-02-23"] = "春節(補假)";
+    holidays["2026-04-03"] = "兒童節(補假)";
+    holidays["2026-06-19"] = "端午節";
+    holidays["2026-06-18"] = "端午節(彈性)";
+    holidays["2026-09-25"] = "中秋節";
+    holidays["2026-09-26"] = "中秋節(彈性)";
+    holidays["2026-10-09"] = "國慶日(彈性)";
+  }
+  if (year === 2027) {
+    holidays["2027-02-05"] = "除夕";
+    holidays["2027-02-06"] = "春節初一";
+    holidays["2027-02-07"] = "春節初二";
+    holidays["2027-02-08"] = "春節初三";
+    holidays["2027-02-09"] = "春節(彈性)";
+    holidays["2027-02-10"] = "春節(彈性)";
+    holidays["2027-03-01"] = "和平紀念日(補假)";
+    holidays["2027-04-05"] = "清明節";
+    holidays["2027-06-09"] = "端午節";
+    holidays["2027-10-15"] = "中秋節";
+  }
+  return holidays;
+}
+
+// ============== STATE ==============
+var activePersonnel = JSON.parse(localStorage.getItem('ndt_activePersonnel') || 'null') || ALL_PERSONNEL.slice();
+var assignments = JSON.parse(localStorage.getItem('ndt_assignments') || '[]');
+var currentYear, currentMonth;
+var pendingDeleteId = null;
+
+var today = new Date();
+currentYear = today.getFullYear();
+currentMonth = today.getMonth();
+
+// ============== CLOUD SYNC ==============
+function getWebAppUrl() {
+  return (document.getElementById('webAppUrl').value || '').trim();
+}
+function saveWebAppUrl() {
+  localStorage.setItem('ndt_webAppUrl', getWebAppUrl());
+  updateSyncBadge();
+}
+function isAutoSync() {
+  return document.getElementById('autoSyncCheck').checked;
+}
+function saveAutoSync() {
+  localStorage.setItem('ndt_autoSync', isAutoSync() ? '1' : '0');
+}
+function updateSyncBadge() {
+  var badge = document.getElementById('syncStatusBadge');
+  var url = getWebAppUrl();
+  if (!url) {
+    badge.className = 'sync-status disconnected';
+    badge.textContent = '未連線';
+  } else {
+    badge.className = 'sync-status connected';
+    badge.textContent = '已設定';
+  }
+}
+
+function logSync(msg) {
+  var el = document.getElementById('syncLog');
+  var now = new Date();
+  var ts = now.getHours().toString().padStart(2,'0') + ':' + now.getMinutes().toString().padStart(2,'0') + ':' + now.getSeconds().toString().padStart(2,'0');
+  el.innerHTML = '[' + ts + '] ' + msg + '<br>' + el.innerHTML;
+}
+
+function setBadgeSyncing() {
+  var badge = document.getElementById('syncStatusBadge');
+  badge.className = 'sync-status syncing';
+  badge.textContent = '同步中...';
+}
+
+function testConnection() {
+  var url = getWebAppUrl();
+  if (!url) { alert('請先輸入 Web App 網址'); return; }
+  setBadgeSyncing();
+  logSync('測試連線中...');
+  fetch(url)
+    .then(function(r) { return r.json(); })
+    .then(function(data) {
+      if (data.success) {
+        logSync('連線成功！人員 ' + (data.activePersonnel || []).length + ' 人，派工 ' + (data.assignments || []).length + ' 筆');
+        updateSyncBadge();
+      } else {
+        logSync('連線失敗：' + (data.error || '未知錯誤'));
+        updateSyncBadge();
+      }
+    })
+    .catch(function(err) {
+      logSync('連線錯誤：' + err.message);
+      updateSyncBadge();
+    });
+}
+
+function cloudSave() {
+  var url = getWebAppUrl();
+  if (!url) { alert('請先輸入 Web App 網址'); return; }
+  setBadgeSyncing();
+  logSync('上傳中...');
+
+  var payload = {
+    activePersonnel: activePersonnel,
+    assignments: assignments
+  };
+
+  fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'text/plain' },
+    body: JSON.stringify(payload)
+  })
+  .then(function(r) { return r.json(); })
+  .then(function(data) {
+    if (data.success) {
+      logSync('上傳成功！人員 ' + data.personnelCount + ' 人，派工 ' + data.assignmentCount + ' 筆');
+    } else {
+      logSync('上傳失敗：' + (data.error || '未知錯誤'));
+    }
+    updateSyncBadge();
+  })
+  .catch(function(err) {
+    logSync('上傳錯誤：' + err.message);
+    updateSyncBadge();
+  });
+}
+
+function cloudLoad() {
+  var url = getWebAppUrl();
+  if (!url) { alert('請先輸入 Web App 網址'); return; }
+  if (!confirm('從雲端載入將覆蓋本地資料，確定要繼續嗎？')) return;
+  setBadgeSyncing();
+  logSync('載入中...');
+
+  fetch(url)
+    .then(function(r) { return r.json(); })
+    .then(function(data) {
+      if (data.success) {
+        if (data.activePersonnel && data.activePersonnel.length > 0) {
+          activePersonnel = data.activePersonnel;
+          localStorage.setItem('ndt_activePersonnel', JSON.stringify(activePersonnel));
+        }
+        if (data.assignments) {
+          assignments = data.assignments;
+          localStorage.setItem('ndt_assignments', JSON.stringify(assignments));
+        }
+        renderAll();
+        logSync('載入成功！人員 ' + activePersonnel.length + ' 人，派工 ' + assignments.length + ' 筆');
+      } else {
+        logSync('載入失敗：' + (data.error || '未知錯誤'));
+      }
+      updateSyncBadge();
+    })
+    .catch(function(err) {
+      logSync('載入錯誤：' + err.message);
+      updateSyncBadge();
+    });
+}
+
+function autoCloudSave() {
+  if (isAutoSync() && getWebAppUrl()) {
+    cloudSave();
+  }
+}
+
+// ============== PANEL TOGGLE ==============
+function togglePanel(contentId, btn) {
+  var el = document.getElementById(contentId);
+  var hidden = el.style.display === 'none';
+  el.style.display = hidden ? '' : 'none';
+  btn.textContent = hidden ? '收合 ▲' : '展開 ▼';
+}
+
+// ============== PERSONNEL MANAGEMENT ==============
+function renderPersonnelGrid() {
+  var grid = document.getElementById('personnelGrid');
+  grid.innerHTML = '';
+  ALL_PERSONNEL.forEach(function(name) {
+    var isActive = activePersonnel.indexOf(name) !== -1;
+    var lbl = document.createElement('label');
+    lbl.className = isActive ? 'checked' : '';
+    lbl.innerHTML = '<input type="checkbox" value="' + name + '" ' + (isActive ? 'checked' : '') + ' onchange="this.parentElement.className=this.checked?\'checked\':\'\'"> ' + name;
+    grid.appendChild(lbl);
+  });
+}
+
+function selectAllPersonnel(val) {
+  document.querySelectorAll('#personnelGrid input[type=checkbox]').forEach(function(cb) {
+    cb.checked = val;
+    cb.parentElement.className = val ? 'checked' : '';
+  });
+}
+
+function confirmPersonnel() {
+  var checked = [];
+  document.querySelectorAll('#personnelGrid input[type=checkbox]:checked').forEach(function(cb) { checked.push(cb.value); });
+  activePersonnel = checked;
+  localStorage.setItem('ndt_activePersonnel', JSON.stringify(activePersonnel));
+  renderAll();
+  autoCloudSave();
+  alert('已更新！目前工作人員共 ' + activePersonnel.length + ' 人');
+}
+
+// ============== ASSIGN PERSON GRID ==============
+function renderAssignPersonGrid() {
+  var grid = document.getElementById('assignPersonGrid');
+  grid.innerHTML = '';
+  activePersonnel.forEach(function(name) {
+    var lbl = document.createElement('label');
+    lbl.innerHTML = '<input type="checkbox" value="' + name + '" onchange="this.parentElement.className=this.checked?\'checked\':\'\'"> ' + name;
+    grid.appendChild(lbl);
+  });
+}
+
+function selectAllAssignPerson(val) {
+  document.querySelectorAll('#assignPersonGrid input[type=checkbox]').forEach(function(cb) {
+    cb.checked = val;
+    cb.parentElement.className = val ? 'checked' : '';
+  });
+}
+
+function getSelectedAssignPersons() {
+  var result = [];
+  document.querySelectorAll('#assignPersonGrid input[type=checkbox]:checked').forEach(function(cb) { result.push(cb.value); });
+  return result;
+}
+
+// ============== ASSIGNMENT MANAGEMENT ==============
+function addAssignment() {
+  var persons = getSelectedAssignPersons();
+  var start = document.getElementById('assignStart').value;
+  var end = document.getElementById('assignEnd').value;
+  var cat = document.getElementById('assignCategory').value;
+  var note = document.getElementById('assignNote').value.trim();
+
+  if (persons.length === 0) { alert('請勾選至少一位人員'); return; }
+  if (!start || !end) { alert('請選擇開始及結束日期'); return; }
+  if (start > end) { alert('結束日期不可早於開始日期'); return; }
+
+  persons.forEach(function(person) {
+    assignments.push({
+      id: Date.now() + '_' + Math.random().toString(36).slice(2,6),
+      person: person, start: start, end: end, category: cat, note: note
+    });
+  });
+
+  saveAssignments();
+  renderAll();
+  document.getElementById('assignNote').value = '';
+  selectAllAssignPerson(false);
+  autoCloudSave();
+}
+
+function saveAssignments() {
+  localStorage.setItem('ndt_assignments', JSON.stringify(assignments));
+}
+
+function removeAssignment(id) {
+  pendingDeleteId = id;
+  var a = assignments.find(function(x) { return x.id === id; });
+  if (!a) return;
+  document.getElementById('deleteModalMsg').textContent =
+    '確定要刪除「' + a.person + '」的「' + a.category + '」派工 (' + a.start + ' ~ ' + a.end + ') 嗎？';
+  document.getElementById('deleteModal').classList.add('active');
+}
+
+function confirmDelete() {
+  assignments = assignments.filter(function(a) { return a.id !== pendingDeleteId; });
+  saveAssignments();
+  renderAll();
+  closeDeleteModal();
+  autoCloudSave();
+}
+
+function closeDeleteModal() {
+  document.getElementById('deleteModal').classList.remove('active');
+  pendingDeleteId = null;
+}
+
+function clearAllAssignments() {
+  if (confirm('確定要清除所有派工紀錄嗎？')) {
+    assignments = [];
+    saveAssignments();
+    renderAll();
+    autoCloudSave();
+  }
+}
+
+// ============== RENDERING ==============
+function changeMonth(delta) {
+  currentMonth += delta;
+  if (currentMonth < 0) { currentMonth = 11; currentYear--; }
+  if (currentMonth > 11) { currentMonth = 0; currentYear++; }
+  renderAll();
+}
+
+function goToday() {
+  currentYear = today.getFullYear();
+  currentMonth = today.getMonth();
+  renderAll();
+}
+
+function getDaysInMonth(y, m) { return new Date(y, m + 1, 0).getDate(); }
+function getDayOfWeek(y, m, d) { return new Date(y, m, d).getDay(); }
+function dateStr(y, m, d) {
+  return y + '-' + String(m+1).padStart(2,'0') + '-' + String(d).padStart(2,'0');
+}
+
+function renderAll() {
+  renderPersonnelGrid();
+  renderAssignPersonGrid();
+  renderLegend();
+  renderAssignmentList();
+  renderCalendar();
+  document.getElementById('monthLabel').textContent = currentYear + ' 年 ' + (currentMonth + 1) + ' 月';
+  document.getElementById('assignStart').value = dateStr(currentYear, currentMonth, 1);
+  document.getElementById('assignEnd').value = dateStr(currentYear, currentMonth, getDaysInMonth(currentYear, currentMonth));
+}
+
+function renderLegend() {
+  var div = document.getElementById('legend');
+  div.innerHTML = '<span style="font-size:11px;color:#777;margin-right:4px;">圖例：</span>';
+  Object.keys(CATEGORY_COLORS).forEach(function(cat) {
+    div.innerHTML += '<span class="legend-item"><span class="legend-color" style="background:' + CATEGORY_COLORS[cat] + '"></span>' + cat + '</span>';
+  });
+  div.innerHTML += '<span class="legend-item"><span class="legend-color" style="background:#fde8e8;border-color:#e74c3c;"></span><span style="color:#c0392b;">國定假日</span></span>';
+}
+
+function renderAssignmentList() {
+  var div = document.getElementById('assignmentList');
+  var label = document.getElementById('assignCountLabel');
+  var filtered = assignments.slice().sort(function(a, b) { return a.start.localeCompare(b.start); });
+  label.textContent = '(共 ' + filtered.length + ' 筆)';
+
+  if (filtered.length === 0) {
+    div.innerHTML = '<div style="color:#999;padding:8px;">目前無派工紀錄</div>';
+    return;
+  }
+
+  div.innerHTML = filtered.map(function(a) {
+    var color = CATEGORY_COLORS[a.category] || '#999';
+    return '<div class="assignment-item" style="background:' + color + '22;border-left:4px solid ' + color + ';">' +
+      '<span><strong>' + a.person + '</strong> │ ' + a.category + ' │ ' + a.start + ' ~ ' + a.end + (a.note ? ' │ ' + a.note : '') + '</span>' +
+      '<span class="del-x" onclick="removeAssignment(\'' + a.id + '\')" title="刪除">✕</span>' +
+    '</div>';
+  }).join('');
+}
+
+function renderCalendar() {
+  var table = document.getElementById('calendarTable');
+  var days = getDaysInMonth(currentYear, currentMonth);
+  var todayStr = dateStr(today.getFullYear(), today.getMonth(), today.getDate());
+  var weekDays = ['日','一','二','三','四','五','六'];
+  var holidays = getTaiwanHolidays(currentYear);
+
+  var html = '<thead><tr><th class="name-col" rowspan="2">姓名</th>';
+  for (var d = 1; d <= days; d++) {
+    var dow = getDayOfWeek(currentYear, currentMonth, d);
+    var ds = dateStr(currentYear, currentMonth, d);
+    var isWeekend = dow === 0 || dow === 6;
+    var isHoliday = !!holidays[ds];
+    var isToday = ds === todayStr;
+    var cls = '';
+    if (isToday) cls += ' today';
+    if (isHoliday) cls += ' holiday';
+    else if (isWeekend) cls += ' weekend';
+    html += '<th class="' + cls.trim() + '" title="' + (holidays[ds] || '') + '">' + d + '</th>';
+  }
+  html += '</tr><tr>';
+  for (var d = 1; d <= days; d++) {
+    var dow = getDayOfWeek(currentYear, currentMonth, d);
+    var ds = dateStr(currentYear, currentMonth, d);
+    var isWeekend = dow === 0 || dow === 6;
+    var isHoliday = !!holidays[ds];
+    var isToday = ds === todayStr;
+    var cls = '';
+    if (isToday) cls += ' today';
+    if (isHoliday) cls += ' holiday';
+    else if (isWeekend) cls += ' weekend';
+    var dayLabel = isHoliday ? '<span style="color:#ff6b6b;">' + weekDays[dow] + '</span>' : weekDays[dow];
+    html += '<th class="' + cls.trim() + '" style="font-size:10px;" title="' + (holidays[ds] || '') + '">' + dayLabel + '</th>';
+  }
+  html += '</tr></thead><tbody>';
+
+  var dailyDeployed = [];
+  for (var i = 0; i < days; i++) dailyDeployed.push(0);
+
+  activePersonnel.forEach(function(person, idx) {
+    var isOdd = idx % 2 === 1;
+    html += '<tr><td class="name-cell ' + (isOdd ? 'odd' : '') + '">' + person + '</td>';
+    for (var d = 1; d <= days; d++) {
+      var ds = dateStr(currentYear, currentMonth, d);
+      var dow = getDayOfWeek(currentYear, currentMonth, d);
+      var isWeekend = dow === 0 || dow === 6;
+      var isHoliday = !!holidays[ds];
+      var isToday = ds === todayStr;
+
+      var a = null;
+      for (var j = 0; j < assignments.length; j++) {
+        if (assignments[j].person === person && assignments[j].start <= ds && assignments[j].end >= ds) {
+          a = assignments[j]; break;
+        }
+      }
+
+      var cls = '';
+      if (isToday) cls += ' today';
+      if (isHoliday) cls += ' holiday';
+      else if (isWeekend) cls += ' weekend';
+
+      if (a) {
+        var color = CATEGORY_COLORS[a.category] || '#999';
+        dailyDeployed[d - 1]++;
+        var title = a.category + (a.note ? '\n' + a.note : '') + '\n' + a.start + ' ~ ' + a.end;
+        var displayText = '';
+        if (a.start === ds || d === 1) {
+          var abbr = a.note || a.category;
+          displayText = abbr.length > 3 ? abbr.substring(0, 3) : abbr;
+        }
+        html += '<td class="assigned ' + cls.trim() + '"' +
+          ' style="background:' + color + ' !important;"' +
+          ' title="' + title.replace(/"/g, '&quot;') + '"' +
+          ' onclick="removeAssignment(\'' + a.id + '\')">' + displayText + '</td>';
+      } else {
+        html += '<td class="' + cls.trim() + '"></td>';
+      }
+    }
+    html += '</tr>';
+  });
+
+  var total = activePersonnel.length;
+  html += '<tr class="summary-row"><td class="summary-label name-cell" style="background:#fef9e7 !important;">已派出人數</td>';
+  for (var d = 1; d <= days; d++) {
+    var dow = getDayOfWeek(currentYear, currentMonth, d);
+    var ds = dateStr(currentYear, currentMonth, d);
+    var isWeekend = dow === 0 || dow === 6;
+    var isHoliday = !!holidays[ds];
+    var val = dailyDeployed[d - 1];
+    var cls2 = isHoliday ? 'holiday' : (isWeekend ? 'weekend' : '');
+    html += '<td class="summary-cell ' + cls2 + '" style="' + (val > 0 ? 'color:#c0392b;' : '') + '">' + (val || '') + '</td>';
+  }
+  html += '</tr>';
+
+  html += '<tr class="summary-row remaining"><td class="summary-label name-cell" style="background:#eafaf1 !important;">剩餘可用人力</td>';
+  for (var d = 1; d <= days; d++) {
+    var dow = getDayOfWeek(currentYear, currentMonth, d);
+    var ds = dateStr(currentYear, currentMonth, d);
+    var isWeekend = dow === 0 || dow === 6;
+    var isHoliday = !!holidays[ds];
+    var remaining = total - dailyDeployed[d - 1];
+    var lowColor = remaining <= 5 ? 'color:#e74c3c;font-weight:bold;' : remaining <= 10 ? 'color:#e67e22;' : 'color:#27ae60;';
+    var cls3 = isHoliday ? 'holiday' : (isWeekend ? 'weekend' : '');
+    html += '<td class="summary-cell ' + cls3 + '" style="' + lowColor + '">' + remaining + '</td>';
+  }
+  html += '</tr></tbody>';
+
+  table.innerHTML = html;
+}
+
+// ============== INIT ==============
+// Restore cloud config
+(function() {
+  var savedUrl = localStorage.getItem('ndt_webAppUrl') || '';
+  document.getElementById('webAppUrl').value = savedUrl;
+  document.getElementById('autoSyncCheck').checked = localStorage.getItem('ndt_autoSync') === '1';
+  updateSyncBadge();
+})();
+
+renderAll();
+</script>
+</body>
+</html>
