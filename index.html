@@ -813,313 +813,124 @@ function renderCalendar() {
 })();
 
 renderAll();
+
+// ======================== 為主頁提供排程數據 ========================
+// 計算本週和下週的日期範圍
+function getWeekRanges() {
+  var today = new Date();
+  var day = today.getDay();
+  
+  // 計算本週一
+  var thisMonday = new Date(today);
+  thisMonday.setDate(today.getDate() - (day === 0 ? 6 : day - 1));
+  
+  // 計算本週日
+  var thisSunday = new Date(thisMonday);
+  thisSunday.setDate(thisMonday.getDate() + 6);
+  
+  // 計算下週一
+  var nextMonday = new Date(thisSunday);
+  nextMonday.setDate(thisSunday.getDate() + 1);
+  
+  // 計算下週日
+  var nextSunday = new Date(nextMonday);
+  nextSunday.setDate(nextMonday.getDate() + 6);
+  
+  return {
+    thisWeek: {
+      start: dateStr(thisMonday.getFullYear(), thisMonday.getMonth(), thisMonday.getDate()),
+      end: dateStr(thisSunday.getFullYear(), thisSunday.getMonth(), thisSunday.getDate())
+    },
+    nextWeek: {
+      start: dateStr(nextMonday.getFullYear(), nextMonday.getMonth(), nextMonday.getDate()),
+      end: dateStr(nextSunday.getFullYear(), nextSunday.getMonth(), nextSunday.getDate())
+    }
+  };
+}
+
+// 從派工記錄中提取本週和下週的工項和人員
+function extractScheduleData() {
+  var ranges = getWeekRanges();
+  
+  // 本週數據
+  var thisWeekPersons = new Set();
+  var thisWeekCount = 0;
+  
+  assignments.forEach(function(a) {
+    // 檢查派工是否與本週重疊
+    if (a.start <= ranges.thisWeek.end && a.end >= ranges.thisWeek.start) {
+      thisWeekPersons.add(a.person);
+      thisWeekCount++;
+    }
+  });
+  
+  // 下週數據
+  var nextWeekPersons = new Set();
+  var nextWeekCount = 0;
+  
+  assignments.forEach(function(a) {
+    // 檢查派工是否與下週重疊
+    if (a.start <= ranges.nextWeek.end && a.end >= ranges.nextWeek.start) {
+      nextWeekPersons.add(a.person);
+      nextWeekCount++;
+    }
+  });
+  
+  // 計算剩餘可用人數
+  var totalPersons = activePersonnel.length;
+  var thisWeekAvailable = totalPersons - thisWeekPersons.size;
+  var nextWeekAvailable = totalPersons - nextWeekPersons.size;
+  
+  return {
+    thisWeek: {
+      itemCount: thisWeekCount,
+      assignedPersons: Array.from(thisWeekPersons),
+      availablePersons: thisWeekAvailable,
+      date: ranges.thisWeek
+    },
+    nextWeek: {
+      itemCount: nextWeekCount,
+      assignedPersons: Array.from(nextWeekPersons),
+      availablePersons: nextWeekAvailable,
+      date: ranges.nextWeek
+    }
+  };
+}
+
+// 保存排程數據到 LocalStorage
+function saveScheduleDataToLocalStorage() {
+  var data = extractScheduleData();
+  
+  localStorage.setItem('scheduleData_thisWeek', JSON.stringify({
+    week: 'thisWeek',
+    title: '本週排程',
+    itemCount: data.thisWeek.itemCount,
+    assignedPersons: data.thisWeek.assignedPersons,
+    availablePersons: data.thisWeek.availablePersons,
+    dateRange: data.thisWeek.date,
+    lastUpdated: new Date().toISOString()
+  }));
+  
+  localStorage.setItem('scheduleData_nextWeek', JSON.stringify({
+    week: 'nextWeek',
+    title: '下週預定排程',
+    itemCount: data.nextWeek.itemCount,
+    assignedPersons: data.nextWeek.assignedPersons,
+    availablePersons: data.nextWeek.availablePersons,
+    dateRange: data.nextWeek.date,
+    lastUpdated: new Date().toISOString()
+  }));
+  
+  console.log('✅ 排程數據已保存到 LocalStorage');
+}
+
+// 初始化時保存排程數據
+setTimeout(function() {
+  saveScheduleDataToLocalStorage();
+}, 100);
+
+// 修改原有的 addAssignment 和 removeAssignment 函數
+// 在它們的末尾添加保存操作（見下面的補充說明）
 </script>
 </body>
- <!-- 
-================================
-返回 NDT 主頁按鈕
-================================
-用途：在你的各應用（assignwork, schedule, housing, hr）中使用
-
-複製此段代碼到你的應用頁面
--->
-
-<!-- ======================== 方案1：頂部導航欄（推薦） ======================== -->
-
-<style>
-    .ndt-topbar {
-        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-        padding: 12px 20px;
-        display: flex;
-        align-items: center;
-        gap: 15px;
-        color: white;
-        box-shadow: 0 2px 8px rgba(102, 126, 234, 0.2);
-    }
-
-    .ndt-back-btn {
-        background: rgba(255,255,255,0.2);
-        color: white;
-        border: 1px solid rgba(255,255,255,0.3);
-        padding: 8px 14px;
-        border-radius: 6px;
-        cursor: pointer;
-        font-size: 0.9em;
-        font-weight: 600;
-        transition: all 0.2s;
-        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-    }
-
-    .ndt-back-btn:hover {
-        background: rgba(255,255,255,0.3);
-        border-color: rgba(255,255,255,0.5);
-        transform: translateY(-1px);
-    }
-
-    .ndt-breadcrumb {
-        font-size: 0.9em;
-        opacity: 0.9;
-        flex: 1;
-    }
-
-    .ndt-breadcrumb strong {
-        font-weight: 600;
-    }
-</style>
-
-<!-- HTML 部分 -->
-<div class="ndt-topbar">
-    <button class="ndt-back-btn" onclick="ndtGoHome()">← 返回主頁</button>
-    <span class="ndt-breadcrumb">
-        NDT 工作管理系統 / <strong id="ndt-app-name">應用</strong>
-    </span>
-</div>
-
-<script>
-    // 返回主頁函數
-    function ndtGoHome() {
-        if (window.parent !== window) {
-            // 在 iframe 中運行
-            window.parent.postMessage({ action: 'switchApp', appId: 'home' }, '*');
-        } else {
-            // 獨立運行
-            window.location.href = '/';
-        }
-    }
-
-    // 自動設置應用名稱
-    function setAppName() {
-        const name = document.getElementById('ndt-app-name');
-        if (name) {
-            // 從 URL 提取應用名稱
-            const path = window.location.pathname;
-            const appNames = {
-                'assignwork': '工作分配',
-                'outage-schedule': '停機排程',
-                'taipower-housing-calc': '住宿預估',
-                'hr-summary': '人資摘要'
-            };
-            
-            for (let [key, value] of Object.entries(appNames)) {
-                if (path.includes(key)) {
-                    name.textContent = value;
-                    break;
-                }
-            }
-        }
-    }
-
-    document.addEventListener('DOMContentLoaded', setAppName);
-</script>
-
-<!-- ======================== 方案2：懸浮返回按鈕 ======================== -->
-
-<style>
-    .ndt-floating-home {
-        position: fixed;
-        bottom: 30px;
-        right: 30px;
-        width: 56px;
-        height: 56px;
-        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-        border-radius: 50%;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        color: white;
-        font-size: 28px;
-        cursor: pointer;
-        box-shadow: 0 4px 16px rgba(102, 126, 234, 0.3);
-        transition: all 0.3s;
-        border: none;
-        z-index: 99;
-    }
-
-    .ndt-floating-home:hover {
-        transform: scale(1.1) translateY(-3px);
-        box-shadow: 0 8px 24px rgba(102, 126, 234, 0.4);
-    }
-
-    .ndt-floating-home:active {
-        transform: scale(0.95);
-    }
-
-    @media (max-width: 768px) {
-        .ndt-floating-home {
-            width: 48px;
-            height: 48px;
-            font-size: 24px;
-            bottom: 20px;
-            right: 20px;
-        }
-    }
-</style>
-
-<!-- HTML 部分 -->
-<button class="ndt-floating-home" onclick="ndtGoHome()" title="返回主頁">🏠</button>
-
-<!-- ======================== 方案3：頁腳返回連結 ======================== -->
-
-<style>
-    .ndt-footer-link {
-        padding: 20px;
-        text-align: center;
-        border-top: 1px solid #e5e7eb;
-        background: #f9fafb;
-        margin-top: auto;
-    }
-
-    .ndt-footer-link a {
-        color: #667eea;
-        text-decoration: none;
-        font-weight: 600;
-        font-size: 0.9em;
-        transition: color 0.2s;
-    }
-
-    .ndt-footer-link a:hover {
-        color: #764ba2;
-    }
-</style>
-
-<!-- HTML 部分 -->
-<div class="ndt-footer-link">
-    <a href="#" onclick="ndtGoHome(); return false;">← 返回 NDT 管理系統主頁</a>
-</div>
-
-<!-- ======================== 完整集成範例 ======================== -->
-
-<!-- 
-在你的應用中集成，有兩種方式：
-
-方式1：只需複製上面的代碼到你的 HTML
-- CSS 自動加載
-- JavaScript 自動執行
-- 無需額外配置
-
-方式2：提取為單獨文件
-
-在你的 HTML 中引入：
-<link rel="stylesheet" href="ndt-topbar.css">
-<script src="ndt-topbar.js"></script>
-
-然後在 <body> 開頭放置：
-<div id="ndt-topbar-container"></div>
-
-示例完整 HTML：
-
-<!DOCTYPE html>
-<html>
-<head>
-    <meta charset="UTF-8">
-    <title>我的應用</title>
-    <style>
-        body { margin: 0; padding: 0; }
-        .ndt-topbar { ... }
-        .ndt-back-btn { ... }
-        /* 你的應用樣式 */
-    </style>
-</head>
-<body>
-    <!-- 返回主頁導航 -->
-    <div class="ndt-topbar">
-        <button class="ndt-back-btn" onclick="ndtGoHome()">← 返回主頁</button>
-        <span class="ndt-breadcrumb">
-            NDT 工作管理系統 / <strong id="ndt-app-name">應用</strong>
-        </span>
-    </div>
-
-    <!-- 你的應用內容 -->
-    <div class="app-content">
-        <!-- ... -->
-    </div>
-
-    <!-- 懸浮按鈕（可選） -->
-    <button class="ndt-floating-home" onclick="ndtGoHome()" title="返回主頁">🏠</button>
-
-    <script>
-        function ndtGoHome() {
-            if (window.parent !== window) {
-                window.parent.postMessage({ action: 'switchApp', appId: 'home' }, '*');
-            } else {
-                window.location.href = '/';
-            }
-        }
-
-        function setAppName() {
-            const name = document.getElementById('ndt-app-name');
-            if (name) {
-                const path = window.location.pathname;
-                const appNames = {
-                    'assignwork': '工作分配',
-                    'outage-schedule': '停機排程',
-                    'taipower-housing-calc': '住宿預估',
-                    'hr-summary': '人資摘要'
-                };
-                
-                for (let [key, value] of Object.entries(appNames)) {
-                    if (path.includes(key)) {
-                        name.textContent = value;
-                        break;
-                    }
-                }
-            }
-        }
-
-        document.addEventListener('DOMContentLoaded', setAppName);
-    </script>
-</body>
-</html>
-
--->
-
-<!-- ======================== 使用建議 ======================== -->
-
-<!-- 
-推薦搭配方案：
-
-1. 首頁導航欄（方案1）
-   ✅ 清晰提示用戶位置
-   ✅ 一致的導航體驗
-   ✅ 適合 iframe 環境
-
-2. 懸浮按鈕（方案2）
-   ✅ 始終可見
-   ✅ 不佔用頁面空間
-   ✅ 適合獨立應用
-
-3. 頁腳連結（方案3）
-   ✅ 簡潔、不侵入性
-   ✅ 適合底部導航
-   ✅ 適合傳統應用
-
-組合使用：
-- 頂部導航 + 懸浮按鈕（最推薦）
-- 頂部導航 + 頁腳連結
-- 只用懸浮按鈕（最簡單）
-
--->
-
-<!-- ======================== 測試 ======================== -->
-
-<!--
-
-測試清單：
-
-[ ] 複製代碼到應用 HTML
-[ ] 點擊返回按鈕
-[ ] 確認返回主頁（iframe 環境）
-[ ] 在主頁點擊應用卡片重新進入
-[ ] 測試應用名稱是否正確顯示
-[ ] 手機版點擊懸浮按鈕測試
-[ ] 點擊鏈接後歷史記錄正確
-
-如遇問題：
-1. 開啟瀏覽器控制台 (F12)
-2. 查看 Console 是否有錯誤
-3. 確認 ndtGoHome() 函數已定義
-4. 確認在 iframe 或獨立環境正確運行
-
--->
-
 </html>
