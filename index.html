@@ -145,7 +145,7 @@
     <div class="cloud-info">
       <strong>設定說明：</strong>
       ① 新建 Google Sheet → ② 擴充功能 → Apps Script → ③ 貼上程式碼 → ④ 部署為網路應用程式 → ⑤ 複製網址貼到上方欄位<br>
-      程式碼檔案：<code>Google_Apps_Script_貼上此程式碼.js</code>（與此 HTML 同一資料夾）<br>
+      程式碼檔案：<code>NDT人力運用_Apps_Script.js</code>（與此 HTML 同一資料夾）<br>
       <label style="margin-top:4px;display:inline-flex;align-items:center;gap:4px;cursor:pointer;">
         <input type="checkbox" id="autoSyncCheck" onchange="saveAutoSync()"> 自動同步（每次新增/刪除派工時自動上傳）
       </label>
@@ -493,7 +493,12 @@ function cloudLoad(silent) {
           localStorage.setItem('ndt_activePersonnel', JSON.stringify(activePersonnel));
         }
         if (data.assignments) {
-          assignments = data.assignments;
+          // 標準化日期格式（Google Sheets 可能回傳 2026-03-26T16:00:00）
+          assignments = data.assignments.map(function(a) {
+            if (a.start && a.start.indexOf('T') !== -1) a.start = a.start.split('T')[0];
+            if (a.end && a.end.indexOf('T') !== -1) a.end = a.end.split('T')[0];
+            return a;
+          });
           localStorage.setItem('ndt_assignments', JSON.stringify(assignments));
         }
         renderAll();
@@ -964,11 +969,14 @@ function convertGoogleSheetsToLocal(sheetData) {
   if (!sheetData || !sheetData.assignments) { console.log('無效的 Google Sheets 數據'); return; }
   assignments = [];
   sheetData.assignments.forEach(function(row) {
-    var startDate = row.startDate || row.start;
-    var endDate = row.endDate || row.end;
+    var startDate = row.startDate || row.start || '';
+    var endDate = row.endDate || row.end || '';
+    // 處理各種日期格式
+    if (startDate && startDate.indexOf('T') !== -1) { startDate = startDate.split('T')[0]; }
+    if (endDate && endDate.indexOf('T') !== -1) { endDate = endDate.split('T')[0]; }
     if (startDate && startDate.includes('/')) { startDate = startDate.replace(/\//g, '-'); }
     if (endDate && endDate.includes('/')) { endDate = endDate.replace(/\//g, '-'); }
-    var assignment = { id: row.id || Math.random().toString(36).substr(2, 9), person: row.person || row.name, category: row.category || row.jobType, start: startDate, end: endDate, note: row.note || row.remark };
+    var assignment = { id: row.id || Math.random().toString(36).substr(2, 9), person: row.person || row.name, category: row.category || row.jobType, start: startDate, end: endDate, note: row.note || row.remark, maintainer: row.maintainer || '' };
     assignments.push(assignment);
   });
   console.log('✅ 已轉換 ' + assignments.length + ' 條派工記錄');
