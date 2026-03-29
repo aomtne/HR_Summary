@@ -260,6 +260,39 @@
 </div>
 
 <script>
+// ═══ LOGIN SESSION (from Dashboard) ═══
+function getLoggedInUser() {
+  try {
+    var u = JSON.parse(sessionStorage.getItem('ndtUser'));
+    return u || null;
+  } catch(e) { return null; }
+}
+function isGuestUser() {
+  var u = getLoggedInUser();
+  return u && u.role === 'guest';
+}
+
+// ═══ HR SYNC TO GOOGLE SHEETS (hardcoded, hidden) ═══
+var _HRSYNC_KEY = 'AKfycbyHiEgKQvkPEA0fF0vs2aeg8P9W1rogruFAGhMNx2mKJR69KCSIGqma_CiL1Q67z1xd';
+function getHrSyncUrl() { return 'https://script.google.com/macros/s/' + _HRSYNC_KEY + '/exec'; }
+
+function syncAssignmentToSheet(record) {
+  try {
+    var user = getLoggedInUser();
+    var payload = {
+      action: 'addHrAssignment',
+      data: record,
+      maintainer: user ? user.account : ''
+    };
+    fetch(getHrSyncUrl(), {
+      method: 'POST',
+      headers: { 'Content-Type': 'text/plain' },
+      body: JSON.stringify(payload)
+    }).then(function() { console.log('✅ 派工已同步至 Google Sheets'); })
+      .catch(function(err) { console.warn('HR同步失敗:', err); });
+  } catch(e) { console.warn('syncAssignmentToSheet error:', e); }
+}
+
 // ============== DATA ==============
 var ALL_PERSONNEL = [
   "蔡武哲","林炳宏","林宏儒","林士瑄","陳柏均","黃鴻鈞","李家緯",
@@ -548,11 +581,17 @@ function addAssignment() {
   if (!start || !end) { alert('請選擇開始及結束日期'); return; }
   if (start > end) { alert('結束日期不可早於開始日期'); return; }
 
+  var user = getLoggedInUser();
+  var maintainer = user ? user.account : '';
   persons.forEach(function(person) {
-    assignments.push({
+    var record = {
       id: Date.now() + '_' + Math.random().toString(36).slice(2,6),
-      person: person, start: start, end: end, category: cat, note: note
-    });
+      person: person, start: start, end: end, category: cat, note: note,
+      maintainer: maintainer
+    };
+    assignments.push(record);
+    // 每筆自動同步到 Google Sheets
+    syncAssignmentToSheet(record);
   });
 
   saveAssignments();
@@ -742,10 +781,11 @@ function renderCalendar() {
       var isHoliday = !!holidays[ds];
       var isToday = ds === todayStr;
 
-      var a = null;
+      // 找出此人當天所有派工
+      var matchedAssigns = [];
       for (var j = 0; j < assignments.length; j++) {
         if (assignments[j].person === person && assignments[j].start <= ds && assignments[j].end >= ds) {
-          a = assignments[j]; break;
+          matchedAssigns.push(assignments[j]);
         }
       }
 
@@ -754,7 +794,18 @@ function renderCalendar() {
       if (isHoliday) cls += ' holiday';
       else if (isWeekend) cls += ' weekend';
 
-      if (a) {
+      if (matchedAssigns.length > 1) {
+        // 重疊：黑底白字
+        dailyDeployed[d - 1]++;
+        var titleParts = matchedAssigns.map(function(ma) {
+          return ma.category + (ma.note ? '(' + ma.note + ')' : '') + ' ' + ma.start + '~' + ma.end;
+        });
+        var title = '⚠ 重疊派工：\n' + titleParts.join('\n');
+        html += '<td class="assigned ' + cls.trim() + '"' +
+          ' style="background:#000 !important; color:#fff !important; font-weight:bold;"' +
+          ' title="' + title.replace(/"/g, '&quot;') + '">重疊</td>';
+      } else if (matchedAssigns.length === 1) {
+        var a = matchedAssigns[0];
         var color = CATEGORY_COLORS[a.category] || '#999';
         dailyDeployed[d - 1]++;
         var title = a.category + (a.note ? '\n' + a.note : '') + '\n' + a.start + ' ~ ' + a.end;
@@ -810,7 +861,7 @@ function renderCalendar() {
   document.getElementById('webAppUrl').value = savedUrl;
   document.getElementById('autoSyncCheck').checked = localStorage.getItem('ndt_autoSync') === '1';
   updateSyncBadge();
-  
+
   // 進入頁面時自動從雲端載入（延遲 500ms 確保頁面完全加載）
   setTimeout(function() {
     if (savedUrl && savedUrl.trim() !== '') {
@@ -821,6 +872,53 @@ function renderCalendar() {
 })();
 
 renderAll();
+
+// ═══ 預設收合三個面板 ═══
+(function() {
+  var panelIds = ['cloudContent', 'personnelContent', 'assignContent'];
+  panelIds.forEach(function(id) {
+    var el = document.getElementById(id);
+    if (el) {
+      el.style.display = 'none';
+      // 更新對應的按鈕文字
+      var panel = el.parentElement;
+      if (panel) {
+        var btn = panel.querySelector('.panel-title button');
+        if (btn) btn.textContent = '展開 ▼';
+      }
+    }
+  });
+})();
+
+// ═══ Guest 權限控制 ═══
+(function() {
+  if (!isGuestUser()) return;
+  document.body.classList.add('hr-role-guest');
+
+  // Guest 無法展開三個受限面板
+  var restrictedPanels = ['cloudContent', 'personnelContent', 'assignContent'];
+  restrictedPanels.forEach(function(id) {
+    var el = document.getElementById(id);
+    if (el) el.style.display = 'none';
+    // 找到對應的按鈕並禁用
+    var panel = el ? el.parentElement : null;
+    if (panel) {
+      var btn = panel.querySelector('.panel-title button');
+      if (btn) {
+        btn.disabled = true;
+        btn.style.opacity = '0.4';
+        btn.style.cursor = 'not-allowed';
+        btn.textContent = '🔒 僅限登入使用者';
+        btn.onclick = null;
+      }
+    }
+  });
+
+  // 隱藏派工列表中的刪除按鈕和清除全部
+  var style = document.createElement('style');
+  style.textContent = 'body.hr-role-guest .del-x { display: none !important; } body.hr-role-guest .btn-danger { display: none !important; }';
+  document.head.appendChild(style);
+})();
 
 // ======================== Google Sheets 自動同步 ========================
 function getGSWeekRanges() {
