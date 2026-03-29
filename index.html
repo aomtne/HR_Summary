@@ -227,7 +227,12 @@
 <div class="panel">
   <div class="panel-title">
     <span>📝 目前派工紀錄 <span style="font-weight:normal;font-size:12px;color:#777;" id="assignCountLabel"></span></span>
-    <button class="btn btn-danger btn-sm" onclick="clearAllAssignments()">清除全部</button>
+    <div style="display:flex;align-items:center;gap:8px;">
+      <input type="text" id="assignSearchBox" placeholder="🔍 搜尋姓名、項目、備註..."
+             oninput="renderAssignmentList()"
+             style="padding:4px 10px;border:1px solid #ccc;border-radius:4px;font-size:12px;width:220px;font-family:inherit;">
+      <button class="btn btn-danger btn-sm" onclick="clearAllAssignments()">清除全部</button>
+    </div>
   </div>
   <div class="assignment-list" id="assignmentList"></div>
 </div>
@@ -273,6 +278,30 @@ function isGuestUser() {
 }
 
 // ═══ HR SYNC TO GOOGLE SHEETS ═══
+function syncDeleteToSheet(id) {
+  try {
+    var url = getWebAppUrl();
+    if (!url) { console.warn('未設定 Web App URL，無法同步刪除'); return; }
+    var syncUrl = url + (url.indexOf('?') === -1 ? '?' : '&') +
+      'action=delete&id=' + encodeURIComponent(id);
+    fetch(syncUrl)
+      .then(function(r) { return r.json(); })
+      .then(function(data) {
+        if (data.success) {
+          console.log('✅ 已從 Google Sheets 刪除：' + id);
+          logSync('雲端刪除成功：' + id);
+        } else {
+          console.warn('雲端刪除失敗:', data.error || '未知錯誤');
+          logSync('雲端刪除失敗：' + (data.error || '未知錯誤'));
+        }
+      })
+      .catch(function(err) {
+        console.warn('雲端刪除錯誤:', err);
+        logSync('雲端刪除錯誤：' + err.message);
+      });
+  } catch(e) { console.warn('syncDeleteToSheet error:', e); }
+}
+
 function syncAssignmentToSheet(record) {
   try {
     var url = getWebAppUrl();
@@ -656,11 +685,11 @@ function confirmDelete() {
   }
 
   // Password correct — proceed with delete
+  syncDeleteToSheet(pendingDeleteId);
   assignments = assignments.filter(function(a) { return a.id !== pendingDeleteId; });
   saveAssignments();
   closeDeleteModal();
   renderAll();
-  autoCloudSave();
 }
 
 function closeDeleteModal() {
@@ -728,11 +757,20 @@ function renderLegend() {
 function renderAssignmentList() {
   var div = document.getElementById('assignmentList');
   var label = document.getElementById('assignCountLabel');
-  var filtered = assignments.slice().sort(function(a, b) { return a.start.localeCompare(b.start); });
-  label.textContent = '(共 ' + filtered.length + ' 筆)';
+  var searchBox = document.getElementById('assignSearchBox');
+  var keyword = searchBox ? searchBox.value.trim().toLowerCase() : '';
+  var sorted = assignments.slice().sort(function(a, b) { return a.start.localeCompare(b.start); });
+  var filtered = sorted;
+  if (keyword) {
+    filtered = sorted.filter(function(a) {
+      var text = (a.person || '') + (a.category || '') + (a.note || '') + (a.start || '') + (a.end || '') + (a.maintainer || '');
+      return text.toLowerCase().indexOf(keyword) !== -1;
+    });
+  }
+  label.textContent = keyword ? '(符合 ' + filtered.length + ' / ' + assignments.length + ' 筆)' : '(共 ' + assignments.length + ' 筆)';
 
   if (filtered.length === 0) {
-    div.innerHTML = '<div style="color:#999;padding:8px;">目前無派工紀錄</div>';
+    div.innerHTML = '<div style="color:#999;padding:8px;">' + (keyword ? '找不到符合「' + keyword + '」的紀錄' : '目前無派工紀錄') + '</div>';
     return;
   }
 
