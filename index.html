@@ -51,9 +51,9 @@
 
   .table-wrap { overflow-x: auto; margin-top: 8px; }
   table { border-collapse: collapse; width: 100%; min-width: 900px; }
-  th, td { border: 1px solid #ccc; text-align: center; padding: 2px 3px; font-size: 11px; min-width: 32px; }
+  th, td { border: 1px solid #ccc; text-align: center; padding: 4px 3px; font-size: 22px; min-width: 16px; }
   th { background: #2c3e50; color: #fff; position: sticky; top: 0; z-index: 2; }
-  th.name-col { min-width: 70px; position: sticky; left: 0; z-index: 3; background: #1a5276; }
+  th.name-col { min-width: 24px; position: sticky; left: 0; z-index: 3; background: #1a5276; }
   td.name-cell { position: sticky; left: 0; z-index: 1; background: #fff; font-weight: bold; white-space: nowrap; text-align: left; padding-left: 6px; }
   td.name-cell.odd { background: #f8f9fa; }
   tr:nth-child(odd) td:not(.name-cell):not(.summary-cell) { background: #fafafa; }
@@ -69,7 +69,7 @@
   tr.summary-row.remaining td { background: #eafaf1 !important; }
   tr.summary-row td.summary-label { text-align: left; padding-left: 6px; position: sticky; left: 0; z-index: 1; }
 
-  td.assigned { color: #fff; font-size: 10px; font-weight: bold; cursor: pointer; position: relative; }
+  td.assigned { color: #fff; font-size: 20px; font-weight: bold; cursor: pointer; position: relative; }
   td.assigned:hover { opacity: 0.85; }
 
   td.today { box-shadow: inset 0 0 0 2px #e74c3c; }
@@ -112,9 +112,9 @@
 <div class="header">
   <h1>NDT 人力運用情形</h1>
   <div class="month-nav">
-    <button onclick="changeMonth(-1)">◀ 上月</button>
+    <button onclick="changeMonth(-1)">◀ 上週</button>
     <span class="month-label" id="monthLabel"></span>
-    <button onclick="changeMonth(1)">下月 ▶</button>
+    <button onclick="changeMonth(1)">下週 ▶</button>
     <button onclick="goToday()" style="margin-left:10px;">今天</button>
     <button onclick="window.print()" style="margin-left:10px;">🖨 列印</button>
   </div>
@@ -203,14 +203,22 @@
           <select id="assignCategory">
             <option value="大修工作">大修工作</option>
             <option value="機械工場委託單">機械工場委託單</option>
-            <option value="特性試驗校正">特性試驗校正</option>
             <option value="外部工作">外部工作</option>
-            <option value="長度力量委託單">長度力量委託單</option>
             <option value="支援中、南分處">支援中、南分處</option>
             <option value="教育訓練">教育訓練</option>
             <option value="請假">請假</option>
             <option value="其他">其他</option>
           </select>
+        </div>
+        <div class="date-row">
+          <div class="input-group">
+            <label>工號</label>
+            <input type="text" id="assignEmpId" placeholder="例：E12345">
+          </div>
+          <div class="input-group">
+            <label>工作地點</label>
+            <input type="text" id="assignLocation" placeholder="例：大潭電廠">
+          </div>
         </div>
         <div class="input-group">
           <label>備註說明</label>
@@ -340,15 +348,13 @@ var ALL_PERSONNEL = [
 ];
 
 var CATEGORY_COLORS = {
-  "大修工作":      "#2980b9",
-  "機械工場委託單": "#8e44ad",
-  "特性試驗校正":  "#27ae60",
-  "外部工作":      "#e67e22",
-  "長度力量委託單": "#16a085",
-  "支援中、南分處": "#d35400",
-  "教育訓練":      "#2c3e50",
-  "請假":          "#95a5a6",
-  "其他":          "#7f8c8d"
+  "大修工作":      "#1565C0",   /* 強藍   */
+  "機械工場委託單": "#6A1B9A",  /* 深紫   */
+  "外部工作":      "#B71C1C",   /* 深紅   */
+  "支援中、南分處": "#2E7D32",  /* 森林綠 */
+  "教育訓練":      "#00695C",   /* 深青   */
+  "請假":          "#455A64",   /* 藍灰   */
+  "其他":          "#5D4037"    /* 深棕   */
 };
 
 // ============== TAIWAN NATIONAL HOLIDAYS ==============
@@ -414,6 +420,20 @@ var pendingDeleteId = null;
 var today = new Date();
 currentYear = today.getFullYear();
 currentMonth = today.getMonth();
+
+// ── Biweekly helpers ──
+function getThisMonday(d) {
+  var day = d.getDay();
+  var diff = (day === 0) ? -6 : 1 - day;
+  var m = new Date(d);
+  m.setDate(d.getDate() + diff);
+  m.setHours(0, 0, 0, 0);
+  return m;
+}
+function formatDateLabel(d) {
+  return d.getFullYear() + '/' + (d.getMonth() + 1) + '/' + d.getDate();
+}
+var currentWeekStart = getThisMonday(new Date());
 
 // ============== CLOUD SYNC ==============
 function getWebAppUrl() {
@@ -623,12 +643,15 @@ function addAssignment() {
   if (!start || !end) { alert('請選擇開始及結束日期'); return; }
   if (start > end) { alert('結束日期不可早於開始日期'); return; }
 
+  var empId = document.getElementById('assignEmpId').value.trim();
+  var location = document.getElementById('assignLocation').value.trim();
   var user = getLoggedInUser();
   var maintainer = user ? user.account : '';
   persons.forEach(function(person) {
     var record = {
       id: Date.now() + '_' + Math.random().toString(36).slice(2,6),
       person: person, start: start, end: end, category: cat, note: note,
+      empId: empId, location: location,
       maintainer: maintainer
     };
     assignments.push(record);
@@ -639,6 +662,8 @@ function addAssignment() {
   saveAssignments();
   renderAll();
   document.getElementById('assignNote').value = '';
+  document.getElementById('assignEmpId').value = '';
+  document.getElementById('assignLocation').value = '';
   selectAllAssignPerson(false);
   autoCloudSave();
 }
@@ -716,15 +741,14 @@ function clearAllAssignments() {
 
 // ============== RENDERING ==============
 function changeMonth(delta) {
-  currentMonth += delta;
-  if (currentMonth < 0) { currentMonth = 11; currentYear--; }
-  if (currentMonth > 11) { currentMonth = 0; currentYear++; }
+  var d = new Date(currentWeekStart);
+  d.setDate(d.getDate() + delta * 7);
+  currentWeekStart = d;
   renderAll();
 }
 
 function goToday() {
-  currentYear = today.getFullYear();
-  currentMonth = today.getMonth();
+  currentWeekStart = getThisMonday(new Date());
   renderAll();
 }
 
@@ -740,9 +764,15 @@ function renderAll() {
   renderLegend();
   renderAssignmentList();
   renderCalendar();
-  document.getElementById('monthLabel').textContent = currentYear + ' 年 ' + (currentMonth + 1) + ' 月';
-  document.getElementById('assignStart').value = dateStr(currentYear, currentMonth, 1);
-  document.getElementById('assignEnd').value = dateStr(currentYear, currentMonth, getDaysInMonth(currentYear, currentMonth));
+  var weekEnd = new Date(currentWeekStart);
+  weekEnd.setDate(weekEnd.getDate() + 13);
+  document.getElementById('monthLabel').textContent =
+    formatDateLabel(currentWeekStart) + ' ～ ' + formatDateLabel(weekEnd);
+  var now = new Date();
+  document.getElementById('assignStart').value =
+    now.getFullYear() + '-' + String(now.getMonth()+1).padStart(2,'0') + '-' + String(now.getDate()).padStart(2,'0');
+  document.getElementById('assignEnd').value =
+    now.getFullYear() + '-' + String(now.getMonth()+1).padStart(2,'0') + '-' + String(now.getDate()).padStart(2,'0');
 }
 
 function renderLegend() {
@@ -776,8 +806,9 @@ function renderAssignmentList() {
 
   div.innerHTML = filtered.map(function(a) {
     var color = CATEGORY_COLORS[a.category] || '#999';
+    var extra = (a.empId ? ' │ 工號：' + a.empId : '') + (a.location ? ' │ ' + a.location : '');
     return '<div class="assignment-item" style="background:' + color + '22;border-left:4px solid ' + color + ';">' +
-      '<span><strong>' + a.person + '</strong> │ ' + a.category + ' │ ' + a.start + ' ~ ' + a.end + (a.note ? ' │ ' + a.note : '') + '</span>' +
+      '<span><strong>' + a.person + '</strong> │ ' + a.category + ' │ ' + a.start + ' ~ ' + a.end + extra + (a.note ? ' │ ' + a.note : '') + '</span>' +
       '<span class="del-x" onclick="removeAssignment(\'' + a.id + '\')" title="刪除">✕</span>' +
     '</div>';
   }).join('');
@@ -785,54 +816,81 @@ function renderAssignmentList() {
 
 function renderCalendar() {
   var table = document.getElementById('calendarTable');
-  var days = getDaysInMonth(currentYear, currentMonth);
   var todayStr = dateStr(today.getFullYear(), today.getMonth(), today.getDate());
   var weekDays = ['日','一','二','三','四','五','六'];
-  var holidays = getTaiwanHolidays(currentYear);
 
+  // Build 14-date array (this week Mon → next week Sun)
+  var dates = [];
+  for (var i = 0; i < 14; i++) {
+    var d = new Date(currentWeekStart);
+    d.setDate(d.getDate() + i);
+    var ds = d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0') + '-' + String(d.getDate()).padStart(2,'0');
+    dates.push({ date: d, ds: ds, day: d.getDate(), month: d.getMonth()+1, year: d.getFullYear(), dow: d.getDay() });
+  }
+
+  // Collect holidays for any years in view
+  var yearsInView = {};
+  dates.forEach(function(info) { yearsInView[info.year] = true; });
+  var holidays = {};
+  Object.keys(yearsInView).forEach(function(y) { var h = getTaiwanHolidays(parseInt(y)); Object.keys(h).forEach(function(k){ holidays[k]=h[k]; }); });
+
+  // ── Header row 1: date numbers ──
   var html = '<thead><tr><th class="name-col" rowspan="2">姓名</th>';
-  for (var d = 1; d <= days; d++) {
-    var dow = getDayOfWeek(currentYear, currentMonth, d);
-    var ds = dateStr(currentYear, currentMonth, d);
-    var isWeekend = dow === 0 || dow === 6;
-    var isHoliday = !!holidays[ds];
-    var isToday = ds === todayStr;
+  dates.forEach(function(info, i) {
+    var isWeekend = info.dow === 0 || info.dow === 6;
+    var isHoliday = !!holidays[info.ds];
+    var isToday = info.ds === todayStr;
     var cls = '';
     if (isToday) cls += ' today';
     if (isHoliday) cls += ' holiday';
     else if (isWeekend) cls += ' weekend';
-    html += '<th class="' + cls.trim() + '" title="' + (holidays[ds] || '') + '">' + d + '</th>';
-  }
+    var sepStyle = (i === 7) ? 'border-left:3px solid #2980b9;' : '';
+    // Show M/D on first cell of each week or when month changes
+    var label = (i === 0 || i === 7 || info.day === 1) ? (info.month + '/' + info.day) : info.day;
+    html += '<th class="' + cls.trim() + '" style="' + sepStyle + '" title="' + (holidays[info.ds] || '') + '">' + label + '</th>';
+  });
   html += '</tr><tr>';
-  for (var d = 1; d <= days; d++) {
-    var dow = getDayOfWeek(currentYear, currentMonth, d);
-    var ds = dateStr(currentYear, currentMonth, d);
-    var isWeekend = dow === 0 || dow === 6;
-    var isHoliday = !!holidays[ds];
-    var isToday = ds === todayStr;
+
+  // ── Header row 2: weekday names ──
+  dates.forEach(function(info, i) {
+    var isWeekend = info.dow === 0 || info.dow === 6;
+    var isHoliday = !!holidays[info.ds];
+    var isToday = info.ds === todayStr;
     var cls = '';
     if (isToday) cls += ' today';
     if (isHoliday) cls += ' holiday';
     else if (isWeekend) cls += ' weekend';
-    var dayLabel = isHoliday ? '<span style="color:#ff6b6b;">' + weekDays[dow] + '</span>' : weekDays[dow];
-    html += '<th class="' + cls.trim() + '" style="font-size:10px;" title="' + (holidays[ds] || '') + '">' + dayLabel + '</th>';
-  }
+    var sepStyle = (i === 7) ? 'border-left:3px solid #2980b9;' : '';
+    var weekLabel = (i < 7) ? '<span style="font-size:9px;color:rgba(255,255,255,0.7);">本週</span>' : '';
+    var dayLabel = isHoliday ? '<span style="color:#ff6b6b;">' + weekDays[info.dow] + '</span>' : weekDays[info.dow];
+    html += '<th class="' + cls.trim() + '" style="font-size:20px;' + sepStyle + '" title="' + (holidays[info.ds] || '') + '">' + dayLabel + '</th>';
+  });
   html += '</tr></thead><tbody>';
 
-  var dailyDeployed = [];
-  for (var i = 0; i < days; i++) dailyDeployed.push(0);
+  // ── Week label rows ──
+  html += '<tr style="background:#e8f4fd;">' +
+    '<td class="name-cell" style="background:#e8f4fd;font-weight:bold;color:#1a5276;font-size:22px;">📅 本週</td>';
+  for (var i = 0; i < 7; i++) {
+    var sepStyle = '';
+    html += '<td style="background:#e8f4fd;"></td>';
+  }
+  html += '<td style="background:#d5e8d4;font-weight:bold;color:#27623a;font-size:22px;border-left:3px solid #2980b9;">📅 下週</td>';
+  for (var i = 0; i < 6; i++) {
+    html += '<td style="background:#d5e8d4;"></td>';
+  }
+  html += '</tr>';
+
+  var dailyDeployed = new Array(14).fill(0);
 
   activePersonnel.forEach(function(person, idx) {
     var isOdd = idx % 2 === 1;
     html += '<tr><td class="name-cell ' + (isOdd ? 'odd' : '') + '">' + person + '</td>';
-    for (var d = 1; d <= days; d++) {
-      var ds = dateStr(currentYear, currentMonth, d);
-      var dow = getDayOfWeek(currentYear, currentMonth, d);
-      var isWeekend = dow === 0 || dow === 6;
+    dates.forEach(function(info, i) {
+      var ds = info.ds;
+      var isWeekend = info.dow === 0 || info.dow === 6;
       var isHoliday = !!holidays[ds];
       var isToday = ds === todayStr;
 
-      // 找出此人當天所有派工
       var matchedAssigns = [];
       for (var j = 0; j < assignments.length; j++) {
         if (assignments[j].person === person && assignments[j].start <= ds && assignments[j].end >= ds) {
@@ -844,62 +902,64 @@ function renderCalendar() {
       if (isToday) cls += ' today';
       if (isHoliday) cls += ' holiday';
       else if (isWeekend) cls += ' weekend';
+      var sepStyle = (i === 7) ? 'border-left:3px solid #2980b9;' : '';
 
       if (matchedAssigns.length > 1) {
-        // 重疊：黑底白字
-        dailyDeployed[d - 1]++;
+        dailyDeployed[i]++;
         var titleParts = matchedAssigns.map(function(ma) {
           return ma.category + (ma.note ? '(' + ma.note + ')' : '') + ' ' + ma.start + '~' + ma.end;
         });
         var title = '⚠ 重疊派工：\n' + titleParts.join('\n');
         html += '<td class="assigned ' + cls.trim() + '"' +
-          ' style="background:#000 !important; color:#fff !important; font-weight:bold;"' +
+          ' style="background:#000 !important; color:#fff !important; font-weight:bold;' + sepStyle + '"' +
           ' title="' + title.replace(/"/g, '&quot;') + '">重疊</td>';
       } else if (matchedAssigns.length === 1) {
         var a = matchedAssigns[0];
         var color = CATEGORY_COLORS[a.category] || '#999';
-        dailyDeployed[d - 1]++;
-        var title = a.category + (a.note ? '\n' + a.note : '') + '\n' + a.start + ' ~ ' + a.end;
+        dailyDeployed[i]++;
+        var title = a.category +
+          (a.empId ? '\n工號：' + a.empId : '') +
+          (a.location ? '\n地點：' + a.location : '') +
+          (a.note ? '\n備註：' + a.note : '') +
+          '\n' + a.start + ' ~ ' + a.end;
         var displayText = '';
-        if (a.start === ds || d === 1) {
+        if (a.start === ds || i === 0 || i === 7) {
           var abbr = a.note || a.category;
           displayText = abbr.length > 3 ? abbr.substring(0, 3) : abbr;
         }
         html += '<td class="assigned ' + cls.trim() + '"' +
-          ' style="background:' + color + ' !important;"' +
+          ' style="background:' + color + ' !important;' + sepStyle + '"' +
           ' title="' + title.replace(/"/g, '&quot;') + '"' +
           ' onclick="removeAssignment(\'' + a.id + '\')">' + displayText + '</td>';
       } else {
-        html += '<td class="' + cls.trim() + '"></td>';
+        html += '<td class="' + cls.trim() + '" style="' + sepStyle + '"></td>';
       }
-    }
+    });
     html += '</tr>';
   });
 
   var total = activePersonnel.length;
   html += '<tr class="summary-row"><td class="summary-label name-cell" style="background:#fef9e7 !important;">已派出人數</td>';
-  for (var d = 1; d <= days; d++) {
-    var dow = getDayOfWeek(currentYear, currentMonth, d);
-    var ds = dateStr(currentYear, currentMonth, d);
-    var isWeekend = dow === 0 || dow === 6;
-    var isHoliday = !!holidays[ds];
-    var val = dailyDeployed[d - 1];
+  dates.forEach(function(info, i) {
+    var isHoliday = !!holidays[info.ds];
+    var isWeekend = info.dow === 0 || info.dow === 6;
+    var val = dailyDeployed[i];
     var cls2 = isHoliday ? 'holiday' : (isWeekend ? 'weekend' : '');
-    html += '<td class="summary-cell ' + cls2 + '" style="' + (val > 0 ? 'color:#c0392b;' : '') + '">' + (val || '') + '</td>';
-  }
+    var sepStyle = (i === 7) ? 'border-left:3px solid #2980b9;' : '';
+    html += '<td class="summary-cell ' + cls2 + '" style="' + sepStyle + (val > 0 ? 'color:#c0392b;' : '') + '">' + (val || '') + '</td>';
+  });
   html += '</tr>';
 
   html += '<tr class="summary-row remaining"><td class="summary-label name-cell" style="background:#eafaf1 !important;">剩餘可用人力</td>';
-  for (var d = 1; d <= days; d++) {
-    var dow = getDayOfWeek(currentYear, currentMonth, d);
-    var ds = dateStr(currentYear, currentMonth, d);
-    var isWeekend = dow === 0 || dow === 6;
-    var isHoliday = !!holidays[ds];
-    var remaining = total - dailyDeployed[d - 1];
+  dates.forEach(function(info, i) {
+    var isHoliday = !!holidays[info.ds];
+    var isWeekend = info.dow === 0 || info.dow === 6;
+    var remaining = total - dailyDeployed[i];
     var lowColor = remaining <= 5 ? 'color:#e74c3c;font-weight:bold;' : remaining <= 10 ? 'color:#e67e22;' : 'color:#27ae60;';
     var cls3 = isHoliday ? 'holiday' : (isWeekend ? 'weekend' : '');
-    html += '<td class="summary-cell ' + cls3 + '" style="' + lowColor + '">' + remaining + '</td>';
-  }
+    var sepStyle = (i === 7) ? 'border-left:3px solid #2980b9;' : '';
+    html += '<td class="summary-cell ' + cls3 + '" style="' + sepStyle + lowColor + '">' + remaining + '</td>';
+  });
   html += '</tr></tbody>';
 
   table.innerHTML = html;
@@ -1014,7 +1074,7 @@ function convertGoogleSheetsToLocal(sheetData) {
     if (endDate && endDate.indexOf('T') !== -1) { endDate = endDate.split('T')[0]; }
     if (startDate && startDate.includes('/')) { startDate = startDate.replace(/\//g, '-'); }
     if (endDate && endDate.includes('/')) { endDate = endDate.replace(/\//g, '-'); }
-    var assignment = { id: row.id || Math.random().toString(36).substr(2, 9), person: row.person || row.name, category: row.category || row.jobType, start: startDate, end: endDate, note: row.note || row.remark, maintainer: row.maintainer || '' };
+    var assignment = { id: row.id || Math.random().toString(36).substr(2, 9), person: row.person || row.name, category: row.category || row.jobType, start: startDate, end: endDate, note: row.note || row.remark, empId: row.empId || '', location: row.location || '', maintainer: row.maintainer || '' };
     assignments.push(assignment);
   });
   console.log('✅ 已轉換 ' + assignments.length + ' 條派工記錄');
