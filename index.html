@@ -50,11 +50,11 @@
   .legend-color { width: 16px; height: 12px; border-radius: 2px; border: 1px solid #ccc; }
 
   .table-wrap { overflow-x: auto; margin-top: 8px; }
-  table { border-collapse: collapse; width: 100%; min-width: 900px; }
-  th, td { border: 1px solid #ccc; text-align: center; padding: 4px 3px; font-size: 22px; min-width: 16px; }
+  table { border-collapse: collapse; table-layout: fixed; width: auto; }
+  th, td { border: 1px solid #ccc; text-align: center; padding: 2px 1px; font-size: 18px; width: 90px; max-width: 90px; overflow: hidden; }
   th { background: #2c3e50; color: #fff; position: sticky; top: 0; z-index: 2; }
-  th.name-col { min-width: 24px; position: sticky; left: 0; z-index: 3; background: #1a5276; }
-  td.name-cell { position: sticky; left: 0; z-index: 1; background: #fff; font-weight: bold; white-space: nowrap; text-align: left; padding-left: 6px; }
+  th.name-col { width: 150px; max-width: 150px; position: sticky; left: 0; z-index: 3; background: #1a5276; overflow: hidden; }
+  td.name-cell { width: 150px; max-width: 150px; position: sticky; left: 0; z-index: 1; background: #fff; font-weight: bold; text-align: center; padding-left: 0; overflow: hidden; }
   td.name-cell.odd { background: #f8f9fa; }
   tr:nth-child(odd) td:not(.name-cell):not(.summary-cell) { background: #fafafa; }
   tr:hover td:not(.summary-cell) { background: #eaf2f8 !important; }
@@ -69,7 +69,7 @@
   tr.summary-row.remaining td { background: #eafaf1 !important; }
   tr.summary-row td.summary-label { text-align: left; padding-left: 6px; position: sticky; left: 0; z-index: 1; }
 
-  td.assigned { color: #fff; font-size: 20px; font-weight: bold; cursor: pointer; position: relative; }
+  td.assigned { color: #fff; font-size: 16px; font-weight: bold; cursor: pointer; position: relative; }
   td.assigned:hover { opacity: 0.85; }
 
   td.today { box-shadow: inset 0 0 0 2px #e74c3c; }
@@ -98,6 +98,24 @@
   .cloud-info { font-size: 11px; color: #777; margin-top: 6px; line-height: 1.6; }
   .cloud-info code { background: #f0f0f0; padding: 1px 5px; border-radius: 3px; font-size: 11px; }
 
+
+  /* ── 月曆垂直捲動 ── */
+  .calendar-panel .table-wrap {
+    overflow: visible;
+  }
+  /* 第1列標題：sticky top:0 (已由 th 全局規則套用) */
+  #calendarTable thead tr { height: 24px; }
+  /* 第2列標題：貼在第1列正下方 */
+  #calendarTable thead tr:nth-child(2) th {
+    top: 24px;
+    z-index: 4;
+  }
+  /* 姓名欄標題 rowspan=2 需保持 top:0 */
+  #calendarTable thead tr:first-child th.name-col {
+    top: 0;
+    z-index: 5;
+  }
+
   @media print {
     body { padding: 0; background: #fff; }
     .panel:not(.calendar-panel), .header .month-nav button { display: none; }
@@ -112,10 +130,14 @@
 <div class="header">
   <h1>NDT 人力運用情形</h1>
   <div class="month-nav">
-    <button onclick="changeMonth(-1)">◀ 上週</button>
+    <button id="btnPrev" onclick="changeMonth(-1)">◀ 上週</button>
     <span class="month-label" id="monthLabel"></span>
-    <button onclick="changeMonth(1)">下週 ▶</button>
+    <button id="btnNext" onclick="changeMonth(1)">下週 ▶</button>
     <button onclick="goToday()" style="margin-left:10px;">今天</button>
+    <span style="margin-left:14px;border-left:1px solid rgba(255,255,255,0.3);padding-left:14px;display:inline-flex;gap:4px;">
+      <button id="btnBiweekly" onclick="setViewMode('biweekly')" style="background:rgba(255,255,255,0.4);border:1px solid rgba(255,255,255,0.6);color:#fff;padding:5px 14px;border-radius:4px;cursor:pointer;font-size:14px;font-weight:bold;">雙周</button>
+      <button id="btnMonthly" onclick="setViewMode('monthly')" style="background:rgba(255,255,255,0.15);border:1px solid rgba(255,255,255,0.3);color:#fff;padding:5px 14px;border-radius:4px;cursor:pointer;font-size:14px;">單月</button>
+    </span>
     <button onclick="window.print()" style="margin-left:10px;">🖨 列印</button>
   </div>
 </div>
@@ -236,13 +258,18 @@
   <div class="panel-title">
     <span>📝 目前派工紀錄 <span style="font-weight:normal;font-size:12px;color:#777;" id="assignCountLabel"></span></span>
     <div style="display:flex;align-items:center;gap:8px;">
-      <input type="text" id="assignSearchBox" placeholder="🔍 搜尋姓名、項目、備註..."
-             oninput="renderAssignmentList()"
-             style="padding:4px 10px;border:1px solid #ccc;border-radius:4px;font-size:12px;width:220px;font-family:inherit;">
+      <button class="btn btn-primary btn-sm" id="assignListToggle" onclick="togglePanel('assignListContent', this)">展開 ▼</button>
       <button class="btn btn-danger btn-sm" onclick="clearAllAssignments()">清除全部</button>
     </div>
   </div>
-  <div class="assignment-list" id="assignmentList"></div>
+  <div id="assignListContent" style="display:none;">
+    <div style="padding:6px 0 4px;">
+      <input type="text" id="assignSearchBox" placeholder="🔍 搜尋姓名、項目、備註..."
+             oninput="renderAssignmentList()"
+             style="padding:4px 10px;border:1px solid #ccc;border-radius:4px;font-size:12px;width:220px;font-family:inherit;">
+    </div>
+    <div class="assignment-list" id="assignmentList"></div>
+  </div>
 </div>
 
 <!-- Calendar -->
@@ -434,6 +461,7 @@ function formatDateLabel(d) {
   return d.getFullYear() + '/' + (d.getMonth() + 1) + '/' + d.getDate();
 }
 var currentWeekStart = getThisMonday(new Date());
+var viewMode = localStorage.getItem('ndt_viewMode') || 'biweekly'; // 'biweekly' | 'monthly'
 
 // ============== CLOUD SYNC ==============
 function getWebAppUrl() {
@@ -575,6 +603,7 @@ function togglePanel(contentId, btn) {
   var hidden = el.style.display === 'none';
   el.style.display = hidden ? '' : 'none';
   btn.textContent = hidden ? '收合 ▲' : '展開 ▼';
+  setTimeout(resizeCalendar, 60);
 }
 
 // ============== PERSONNEL MANAGEMENT ==============
@@ -741,14 +770,38 @@ function clearAllAssignments() {
 
 // ============== RENDERING ==============
 function changeMonth(delta) {
-  var d = new Date(currentWeekStart);
-  d.setDate(d.getDate() + delta * 7);
-  currentWeekStart = d;
+  if (viewMode === 'biweekly') {
+    var d = new Date(currentWeekStart);
+    d.setDate(d.getDate() + delta * 7);
+    currentWeekStart = d;
+  } else {
+    currentMonth += delta;
+    if (currentMonth < 0) { currentMonth = 11; currentYear--; }
+    if (currentMonth > 11) { currentMonth = 0; currentYear++; }
+  }
   renderAll();
 }
 
 function goToday() {
   currentWeekStart = getThisMonday(new Date());
+  currentYear = today.getFullYear();
+  currentMonth = today.getMonth();
+  renderAll();
+}
+
+function setViewMode(mode) {
+  viewMode = mode;
+  localStorage.setItem('ndt_viewMode', mode);
+  if (mode === 'monthly') {
+    currentYear = currentWeekStart.getFullYear();
+    currentMonth = currentWeekStart.getMonth();
+  } else {
+    // 切回雙周：從 currentYear/Month 的第一個週一開始
+    currentWeekStart = getThisMonday(new Date(currentYear, currentMonth, 1));
+    // 若所選週已過去太多，就重設為本週
+    var now = getThisMonday(new Date());
+    if (currentWeekStart < now) currentWeekStart = now;
+  }
   renderAll();
 }
 
@@ -764,10 +817,28 @@ function renderAll() {
   renderLegend();
   renderAssignmentList();
   renderCalendar();
-  var weekEnd = new Date(currentWeekStart);
-  weekEnd.setDate(weekEnd.getDate() + 13);
-  document.getElementById('monthLabel').textContent =
-    formatDateLabel(currentWeekStart) + ' ～ ' + formatDateLabel(weekEnd);
+  setTimeout(resizeCalendar, 80);
+
+  var prevBtn = document.getElementById('btnPrev');
+  var nextBtn = document.getElementById('btnNext');
+  var btnBi  = document.getElementById('btnBiweekly');
+  var btnMo  = document.getElementById('btnMonthly');
+  if (viewMode === 'biweekly') {
+    if (prevBtn) prevBtn.textContent = '◀ 上週';
+    if (nextBtn) nextBtn.textContent = '下週 ▶';
+    var weekEnd = new Date(currentWeekStart);
+    weekEnd.setDate(weekEnd.getDate() + 13);
+    document.getElementById('monthLabel').textContent =
+      formatDateLabel(currentWeekStart) + ' ～ ' + formatDateLabel(weekEnd);
+    if (btnBi) { btnBi.style.background='rgba(255,255,255,0.4)'; btnBi.style.fontWeight='bold'; btnBi.style.borderColor='rgba(255,255,255,0.6)'; }
+    if (btnMo) { btnMo.style.background='rgba(255,255,255,0.15)'; btnMo.style.fontWeight='normal'; btnMo.style.borderColor='rgba(255,255,255,0.3)'; }
+  } else {
+    if (prevBtn) prevBtn.textContent = '◀ 上月';
+    if (nextBtn) nextBtn.textContent = '下月 ▶';
+    document.getElementById('monthLabel').textContent = currentYear + ' 年 ' + (currentMonth + 1) + ' 月';
+    if (btnBi) { btnBi.style.background='rgba(255,255,255,0.15)'; btnBi.style.fontWeight='normal'; btnBi.style.borderColor='rgba(255,255,255,0.3)'; }
+    if (btnMo) { btnMo.style.background='rgba(255,255,255,0.4)'; btnMo.style.fontWeight='bold'; btnMo.style.borderColor='rgba(255,255,255,0.6)'; }
+  }
   var now = new Date();
   document.getElementById('assignStart').value =
     now.getFullYear() + '-' + String(now.getMonth()+1).padStart(2,'0') + '-' + String(now.getDate()).padStart(2,'0');
@@ -814,7 +885,102 @@ function renderAssignmentList() {
   }).join('');
 }
 
+
+function renderMonthlyCalendar() {
+  var table = document.getElementById('calendarTable');
+  var days = getDaysInMonth(currentYear, currentMonth);
+  var todayStr = dateStr(today.getFullYear(), today.getMonth(), today.getDate());
+  var weekDays = ['日','一','二','三','四','五','六'];
+  var holidays = getTaiwanHolidays(currentYear);
+
+  var html = '<thead><tr><th class="name-col" rowspan="2">姓名</th>';
+  for (var d = 1; d <= days; d++) {
+    var dow = getDayOfWeek(currentYear, currentMonth, d);
+    var ds  = dateStr(currentYear, currentMonth, d);
+    var isWeekend = dow === 0 || dow === 6;
+    var isHoliday = !!holidays[ds];
+    var isToday   = ds === todayStr;
+    var cls = (isToday ? ' today' : '') + (isHoliday ? ' holiday' : (isWeekend ? ' weekend' : ''));
+    html += '<th class="' + cls.trim() + '" title="' + (holidays[ds]||'') + '">' + d + '</th>';
+  }
+  html += '</tr><tr>';
+  for (var d = 1; d <= days; d++) {
+    var dow = getDayOfWeek(currentYear, currentMonth, d);
+    var ds  = dateStr(currentYear, currentMonth, d);
+    var isWeekend = dow === 0 || dow === 6;
+    var isHoliday = !!holidays[ds];
+    var isToday   = ds === todayStr;
+    var cls = (isToday ? ' today' : '') + (isHoliday ? ' holiday' : (isWeekend ? ' weekend' : ''));
+    var dayLabel = isHoliday ? '<span style="color:#ff6b6b;">' + weekDays[dow] + '</span>' : weekDays[dow];
+    html += '<th class="' + cls.trim() + '" style="font-size:16px;" title="' + (holidays[ds]||'') + '">' + dayLabel + '</th>';
+  }
+  html += '</tr></thead><tbody>';
+
+  var dailyDeployed = new Array(days).fill(0);
+
+  activePersonnel.forEach(function(person, idx) {
+    var isOdd = idx % 2 === 1;
+    html += '<tr><td class="name-cell ' + (isOdd ? 'odd' : '') + '">' + person + '</td>';
+    for (var d = 1; d <= days; d++) {
+      var ds  = dateStr(currentYear, currentMonth, d);
+      var dow = getDayOfWeek(currentYear, currentMonth, d);
+      var isWeekend = dow === 0 || dow === 6;
+      var isHoliday = !!holidays[ds];
+      var isToday   = ds === todayStr;
+      var matched   = assignments.filter(function(a){ return a.person===person && a.start<=ds && a.end>=ds; });
+      var cls = (isToday ? ' today' : '') + (isHoliday ? ' holiday' : (isWeekend ? ' weekend' : ''));
+
+      if (matched.length > 1) {
+        dailyDeployed[d-1]++;
+        var title = '⚠ 重疊派工：\n' + matched.map(function(ma){
+          return ma.category + (ma.note?'('+ma.note+')':'') + ' ' + ma.start+'~'+ma.end;
+        }).join('\n');
+        html += '<td class="assigned' + cls + '" style="background:#000!important;color:#fff!important;font-weight:bold;" title="' + title.replace(/"/g,'&quot;') + '">重疊</td>';
+      } else if (matched.length === 1) {
+        var a = matched[0];
+        var color = CATEGORY_COLORS[a.category] || '#999';
+        dailyDeployed[d-1]++;
+        var title = a.category + (a.empId?'\n工號：'+a.empId:'') + (a.location?'\n地點：'+a.location:'') + (a.note?'\n備註：'+a.note:'') + '\n' + a.start+' ~ '+a.end;
+        var abbr = '';
+        if (a.start === ds || d === 1) { abbr = (a.note||a.category); abbr = abbr.length>3?abbr.substring(0,3):abbr; }
+        html += '<td class="assigned' + cls + '" style="background:'+color+'!important;" title="' + title.replace(/"/g,'&quot;') + '" onclick="removeAssignment(\''+a.id+'\')">' + abbr + '</td>';
+      } else {
+        html += '<td class="' + cls.trim() + '"></td>';
+      }
+    }
+    html += '</tr>';
+  });
+
+  var total = activePersonnel.length;
+  html += '<tr class="summary-row"><td class="summary-label name-cell" style="background:#fef9e7!important;">已派出人數</td>';
+  for (var d = 1; d <= days; d++) {
+    var dow = getDayOfWeek(currentYear, currentMonth, d);
+    var ds  = dateStr(currentYear, currentMonth, d);
+    var isWeekend = dow===0||dow===6; var isHoliday = !!holidays[ds];
+    var val = dailyDeployed[d-1];
+    var cls2 = isHoliday?'holiday':(isWeekend?'weekend':'');
+    html += '<td class="summary-cell '+cls2+'" style="'+(val>0?'color:#c0392b;':'')+'">'+( val||'')+'</td>';
+  }
+  html += '</tr><tr class="summary-row remaining"><td class="summary-label name-cell" style="background:#eafaf1!important;">剩餘可用人力</td>';
+  for (var d = 1; d <= days; d++) {
+    var dow = getDayOfWeek(currentYear, currentMonth, d);
+    var ds  = dateStr(currentYear, currentMonth, d);
+    var isWeekend = dow===0||dow===6; var isHoliday = !!holidays[ds];
+    var rem = total - dailyDeployed[d-1];
+    var lc  = rem<=5?'color:#e74c3c;font-weight:bold;':rem<=10?'color:#e67e22;':'color:#27ae60;';
+    var cls3 = isHoliday?'holiday':(isWeekend?'weekend':'');
+    html += '<td class="summary-cell '+cls3+'" style="'+lc+'">'+rem+'</td>';
+  }
+  html += '</tr></tbody>';
+  table.innerHTML = html;
+}
+
 function renderCalendar() {
+  if (viewMode === 'monthly') renderMonthlyCalendar();
+  else renderBiweeklyCalendar();
+}
+
+function renderBiweeklyCalendar() {
   var table = document.getElementById('calendarTable');
   var todayStr = dateStr(today.getFullYear(), today.getMonth(), today.getDate());
   var weekDays = ['日','一','二','三','四','五','六'];
@@ -863,18 +1029,18 @@ function renderCalendar() {
     var sepStyle = (i === 7) ? 'border-left:3px solid #2980b9;' : '';
     var weekLabel = (i < 7) ? '<span style="font-size:9px;color:rgba(255,255,255,0.7);">本週</span>' : '';
     var dayLabel = isHoliday ? '<span style="color:#ff6b6b;">' + weekDays[info.dow] + '</span>' : weekDays[info.dow];
-    html += '<th class="' + cls.trim() + '" style="font-size:20px;' + sepStyle + '" title="' + (holidays[info.ds] || '') + '">' + dayLabel + '</th>';
+    html += '<th class="' + cls.trim() + '" style="font-size:16px;' + sepStyle + '" title="' + (holidays[info.ds] || '') + '">' + dayLabel + '</th>';
   });
   html += '</tr></thead><tbody>';
 
   // ── Week label rows ──
   html += '<tr style="background:#e8f4fd;">' +
-    '<td class="name-cell" style="background:#e8f4fd;font-weight:bold;color:#1a5276;font-size:22px;">📅 本週</td>';
+    '<td class="name-cell" style="background:#e8f4fd;font-weight:bold;color:#1a5276;font-size:18px;">📅 本週</td>';
   for (var i = 0; i < 7; i++) {
     var sepStyle = '';
     html += '<td style="background:#e8f4fd;"></td>';
   }
-  html += '<td style="background:#d5e8d4;font-weight:bold;color:#27623a;font-size:22px;border-left:3px solid #2980b9;">📅 下週</td>';
+  html += '<td style="background:#d5e8d4;font-weight:bold;color:#27623a;font-size:18px;border-left:3px solid #2980b9;">📅 下週</td>';
   for (var i = 0; i < 6; i++) {
     html += '<td style="background:#d5e8d4;"></td>';
   }
@@ -963,6 +1129,18 @@ function renderCalendar() {
   html += '</tr></tbody>';
 
   table.innerHTML = html;
+}
+
+// ── 頁面自由捲動，重置所有強制樣式 ──
+function resizeCalendar() {
+  var wrap = document.querySelector('.calendar-panel .table-wrap');
+  var table = document.getElementById('calendarTable');
+  if (!wrap || !table) return;
+  table.style.zoom = '';
+  table.style.transform = '';
+  wrap.style.height = '';
+  wrap.style.maxHeight = '';
+  wrap.style.overflow = 'visible';
 }
 
 // ============== INIT ==============
