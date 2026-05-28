@@ -116,6 +116,16 @@
     z-index: 5;
   }
 
+  /* ── 人員列固定高度 20px ── */
+  #calendarTable tbody tr:not(.summary-row) { height: 38px; max-height: 38px; }
+  #calendarTable tbody tr:not(.summary-row) td {
+    padding-top: 0;
+    padding-bottom: 0;
+    line-height: 38px;
+    height: 38px;
+    max-height: 38px;
+  }
+
   @media print {
     body { padding: 0; background: #fff; }
     .panel:not(.calendar-panel), .header .month-nav button { display: none; }
@@ -379,7 +389,7 @@ var CATEGORY_COLORS = {
   "機械工場委託單": "#6A1B9A",  /* 深紫   */
   "外部工作":      "#B71C1C",   /* 深紅   */
   "支援中、南分處": "#2E7D32",  /* 森林綠 */
-  "教育訓練":      "#00695C",   /* 深青   */
+  "教育訓練":      "#FF6D00",   /* 亮橘   */
   "請假":          "#455A64",   /* 藍灰   */
   "其他":          "#5D4037"    /* 深棕   */
 };
@@ -941,8 +951,8 @@ function renderMonthlyCalendar() {
         var color = CATEGORY_COLORS[a.category] || '#999';
         dailyDeployed[d-1]++;
         var title = a.category + (a.empId?'\n工號：'+a.empId:'') + (a.location?'\n地點：'+a.location:'') + (a.note?'\n備註：'+a.note:'') + '\n' + a.start+' ~ '+a.end;
-        var abbr = '';
-        if (a.start === ds || d === 1) { abbr = (a.note||a.category); abbr = abbr.length>3?abbr.substring(0,3):abbr; }
+        var _t = a.note || a.category;
+        var abbr = _t.length > 2 ? _t.substring(0, 2) : _t;
         html += '<td class="assigned' + cls + '" style="background:'+color+'!important;" title="' + title.replace(/"/g,'&quot;') + '" onclick="removeAssignment(\''+a.id+'\')">' + abbr + '</td>';
       } else {
         html += '<td class="' + cls.trim() + '"></td>';
@@ -1088,11 +1098,8 @@ function renderBiweeklyCalendar() {
           (a.location ? '\n地點：' + a.location : '') +
           (a.note ? '\n備註：' + a.note : '') +
           '\n' + a.start + ' ~ ' + a.end;
-        var displayText = '';
-        if (a.start === ds || i === 0 || i === 7) {
-          var abbr = a.note || a.category;
-          displayText = abbr.length > 3 ? abbr.substring(0, 3) : abbr;
-        }
+        var _t2 = a.note || a.category;
+        var displayText = _t2.length > 2 ? _t2.substring(0, 2) : _t2;
         html += '<td class="assigned ' + cls.trim() + '"' +
           ' style="background:' + color + ' !important;' + sepStyle + '"' +
           ' title="' + title.replace(/"/g, '&quot;') + '"' +
