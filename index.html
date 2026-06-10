@@ -824,16 +824,44 @@ function dateStr(y, m, d) {
 // 將任意日期值正規化為 yyyy-MM-dd；無法辨識為日期則回傳 ''（視為無效）
 function normDate(v) {
   if (v === null || v === undefined) return '';
+
+  // 真正的 Date 物件
+  if (Object.prototype.toString.call(v) === '[object Date]') {
+    return isNaN(v.getTime()) ? '' : fmtLocalDate(v);
+  }
+
   var s = String(v).trim();
   if (!s) return '';
-  if (s.indexOf('T') !== -1) s = s.split('T')[0];   // 去掉時間 2026-06-10T16:00:00
-  if (s.indexOf(' ') !== -1) s = s.split(' ')[0];
-  s = s.replace(/\//g, '-');                          // 2026/6/10 → 2026-6-10
-  var m = s.match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/);
-  if (!m) return '';                                  // 不是日期（例如帳號、備註文字）→ 無效
-  var mo = parseInt(m[2], 10), d = parseInt(m[3], 10);
-  if (mo < 1 || mo > 12 || d < 1 || d > 31) return '';
-  return m[1] + '-' + String(mo).padStart(2, '0') + '-' + String(d).padStart(2, '0');
+
+  // 帶有「時間＋時區」(T...Z 或 +0800)，或像 JS Date 字串(Fri May 22 2026 ...)
+  // → 交給 Date 解析，再用「當地」年月日，才能正確換算時區、避免差一天
+  var hasTZ = /T.*(Z|[+\-]\d{2}:?\d{2})/.test(s);
+  var looksLikeDateText = /^[A-Za-z]{3}\s/.test(s);   // 例：Fri May 22 2026 ...
+  if (hasTZ || looksLikeDateText) {
+    var dt = new Date(s);
+    if (!isNaN(dt.getTime())) return fmtLocalDate(dt);
+  }
+
+  // 純日期 yyyy-m-d 或 yyyy/m/d（可帶不含時區的時間）→ 直接取字面，最穩定
+  var m = s.match(/^(\d{4})[-\/](\d{1,2})[-\/](\d{1,2})/);
+  if (m) {
+    var mo = parseInt(m[2], 10), d = parseInt(m[3], 10);
+    if (mo >= 1 && mo <= 12 && d >= 1 && d <= 31) {
+      return m[1] + '-' + String(mo).padStart(2, '0') + '-' + String(d).padStart(2, '0');
+    }
+  }
+
+  // 最後再賭一次 Date 解析；都不行就視為無效（例如帳號、備註文字）
+  var dt2 = new Date(s);
+  if (!isNaN(dt2.getTime())) return fmtLocalDate(dt2);
+  return '';
+}
+
+// 以「當地時區」格式化成 yyyy-MM-dd
+function fmtLocalDate(dt) {
+  return dt.getFullYear() + '-' +
+         String(dt.getMonth() + 1).padStart(2, '0') + '-' +
+         String(dt.getDate()).padStart(2, '0');
 }
 
 // 嚴格判斷：某人員在 ds 當天是否落在此派工的「實際開始～結束日期」內
