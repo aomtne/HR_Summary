@@ -922,7 +922,31 @@ function renderAssignmentList() {
   var label = document.getElementById('assignCountLabel');
   var searchBox = document.getElementById('assignSearchBox');
   var keyword = searchBox ? searchBox.value.trim().toLowerCase() : '';
-  var sorted = assignments.slice().sort(function(a, b) { return a.start.localeCompare(b.start); });
+
+  // 計算當前檢視區間的起訖日期字串
+  var periodStart, periodEnd;
+  if (viewMode === 'biweekly') {
+    var ws = new Date(currentWeekStart);
+    var we = new Date(currentWeekStart);
+    we.setDate(we.getDate() + 13);
+    periodStart = fmtLocalDate(ws);
+    periodEnd   = fmtLocalDate(we);
+  } else {
+    // 單月模式
+    var y = currentYear, mo = currentMonth;
+    var daysInMo = new Date(y, mo + 1, 0).getDate();
+    periodStart = y + '-' + String(mo + 1).padStart(2, '0') + '-01';
+    periodEnd   = y + '-' + String(mo + 1).padStart(2, '0') + '-' + String(daysInMo).padStart(2, '0');
+  }
+
+  // 先篩出與當前區間有重疊的派工（派工結束 >= 區間開始 且 派工開始 <= 區間結束）
+  var inPeriod = assignments.filter(function(a) {
+    var s = normDate(a.start), e = normDate(a.end);
+    if (!s || !e) return false;
+    return s <= periodEnd && e >= periodStart;
+  });
+
+  var sorted = inPeriod.slice().sort(function(a, b) { return a.start.localeCompare(b.start); });
   var filtered = sorted;
   if (keyword) {
     filtered = sorted.filter(function(a) {
@@ -930,7 +954,14 @@ function renderAssignmentList() {
       return text.toLowerCase().indexOf(keyword) !== -1;
     });
   }
-  label.textContent = keyword ? '(符合 ' + filtered.length + ' / ' + assignments.length + ' 筆)' : '(共 ' + assignments.length + ' 筆)';
+
+  // 標題：顯示「當前區間筆數 / 全部筆數」
+  var periodLabel = viewMode === 'biweekly'
+    ? periodStart + ' ～ ' + periodEnd
+    : currentYear + '/' + (currentMonth + 1) + ' 月';
+  label.textContent = keyword
+    ? '(' + periodLabel + '，符合 ' + filtered.length + ' / ' + inPeriod.length + ' 筆)'
+    : '(' + periodLabel + '，共 ' + inPeriod.length + ' 筆，全部 ' + assignments.length + ' 筆)';
 
   if (filtered.length === 0) {
     div.innerHTML = '<div style="color:#999;padding:8px;">' + (keyword ? '找不到符合「' + keyword + '」的紀錄' : '目前無派工紀錄') + '</div>';
