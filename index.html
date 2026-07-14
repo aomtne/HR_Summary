@@ -149,6 +149,7 @@
       <button id="btnMonthly" onclick="setViewMode('monthly')" style="background:rgba(255,255,255,0.15);border:1px solid rgba(255,255,255,0.3);color:#fff;padding:5px 14px;border-radius:4px;cursor:pointer;font-size:14px;">單月</button>
     </span>
     <button onclick="window.print()" style="margin-left:10px;">🖨 列印</button>
+    <button onclick="generateWeeklyReport()" style="margin-left:10px;background:#f39c12;border:1px solid rgba(255,255,255,0.6);font-weight:bold;">📄 週報</button>
   </div>
 </div>
 
@@ -393,6 +394,123 @@ var CATEGORY_COLORS = {
   "請假":          "#455A64",   /* 藍灰   */
   "其他":          "#5D4037"    /* 深棕   */
 };
+
+// ============== SECTION (課別) 週報 ==============
+var SECTION_TEST     = ["林炳宏","陳柏均","李家緯","黃嵩捷","楊竣宇","呂侑儒","吳宇軒","李晨鍠","邱重豪","廖元瑜","蔡瀚承","陳擎","吳祖年","陳思豪"];
+var SECTION_RESEARCH = ["林宏儒","林士瑄","黃鴻鈞","吳志成","鍾銘軒","李振誠","陳政瑋","徐振華","張謙凌","張志玄","李昇晉","張瑋岑","朱彥豪","陳廉淞"];
+
+function getPersonSection(name){
+  if (SECTION_TEST.indexOf(name) !== -1) return 'test';
+  if (SECTION_RESEARCH.indexOf(name) !== -1) return 'research';
+  return 'other';
+}
+function sectionRank(name){
+  var i = SECTION_TEST.indexOf(name);     if (i !== -1) return [0, i];
+  i = SECTION_RESEARCH.indexOf(name);     if (i !== -1) return [1, i];
+  return [2, 0];
+}
+
+// 依課別（試驗課→研測課→其他）重新排序月曆人員，並固定保存
+function reorderPersonnelBySection(){
+  activePersonnel = activePersonnel.slice().sort(function(a,b){
+    var ra = sectionRank(a), rb = sectionRank(b);
+    if (ra[0] !== rb[0]) return ra[0] - rb[0];
+    return ra[1] - rb[1];
+  });
+  localStorage.setItem('ndt_activePersonnel', JSON.stringify(activePersonnel));
+}
+
+// 下週一～週日範圍（以今天為基準）
+function getNextWeekRange(){
+  var t = new Date();
+  var day = t.getDay();
+  var thisMon = new Date(t); thisMon.setDate(t.getDate() - (day === 0 ? 6 : day - 1));
+  var nextMon = new Date(thisMon); nextMon.setDate(thisMon.getDate() + 7);
+  var nextSun = new Date(nextMon); nextSun.setDate(nextMon.getDate() + 6);
+  return { start: fmtLocalDate(nextMon), end: fmtLocalDate(nextSun), startD: nextMon, endD: nextSun };
+}
+
+function fmtSlash(ds){ var p = ds.split('-'); return p[0] + '/' + p[1] + '/' + p[2]; }
+function fmtSlashWeekday(d){
+  var wd = ['日','一','二','三','四','五','六'][d.getDay()];
+  return d.getFullYear() + '/' + String(d.getMonth()+1).padStart(2,'0') + '/' + String(d.getDate()).padStart(2,'0') + '（' + wd + '）';
+}
+
+// 建立某課別下週工作報表文字
+function buildSectionReport(sectionKey, sectionName, range){
+  var recs = assignments.filter(function(a){
+    if (getPersonSection(a.person) !== sectionKey) return false;
+    var s = normDate(a.start), e = normDate(a.end);
+    if (!s || !e) return false;
+    return s <= range.end && e >= range.start;   // 與下週重疊
+  });
+  // 分組：類別 + 備註 + 地點 + 起 + 訖
+  var groups = [];
+  recs.forEach(function(a){
+    var key = (a.category||'') + '|' + (a.note||'') + '|' + (a.location||'') + '|' + a.start + '|' + a.end;
+    var g = null;
+    for (var i=0;i<groups.length;i++){ if (groups[i].key === key){ g = groups[i]; break; } }
+    if (!g){ g = { key:key, category:a.category||'', note:a.note||'', location:a.location||'', empId:a.empId||'', start:a.start, end:a.end, persons:[] }; groups.push(g); }
+    if (g.persons.indexOf(a.person) === -1) g.persons.push(a.person);
+  });
+  var order = (sectionKey === 'test') ? SECTION_TEST : SECTION_RESEARCH;
+  groups.forEach(function(g){ g.persons.sort(function(x,y){ return order.indexOf(x) - order.indexOf(y); }); });
+  groups.sort(function(a,b){ return a.start.localeCompare(b.start) || a.category.localeCompare(b.category); });
+
+  var now = new Date();
+  var ts = now.getFullYear() + '/' + String(now.getMonth()+1).padStart(2,'0') + '/' + String(now.getDate()).padStart(2,'0') + ' ' + String(now.getHours()).padStart(2,'0') + ':' + String(now.getMinutes()).padStart(2,'0');
+  var L = [];
+  L.push('NDT' + sectionName + '　下週工作週報');
+  L.push('週期：' + fmtSlashWeekday(range.startD) + ' ～ ' + fmtSlashWeekday(range.endD));
+  L.push('產生時間：' + ts);
+  L.push('============================================================');
+  L.push('');
+  if (groups.length === 0){
+    L.push('下週無排定工作。');
+  } else {
+    var allPersons = {};
+    groups.forEach(function(g, idx){
+      L.push('【' + (idx+1) + '】' + g.category + (g.note ? ' — ' + g.note : ''));
+      L.push('　　人員：' + g.persons.join('、') + '（' + g.persons.length + '人）');
+      L.push('　　期間：' + fmtSlash(g.start) + ' ～ ' + fmtSlash(g.end));
+      var extra = [];
+      if (g.location) extra.push('地點：' + g.location);
+      if (g.empId)    extra.push('工號：' + g.empId);
+      if (extra.length) L.push('　　' + extra.join('　'));
+      if (g.note) L.push('　　備註：' + g.note);
+      L.push('');
+      g.persons.forEach(function(p){ allPersons[p] = 1; });
+    });
+    L.push('------------------------------------------------------------');
+    L.push('本週報共 ' + groups.length + ' 項工作，動用 ' + Object.keys(allPersons).length + ' 人。');
+  }
+  return L.join('\r\n');
+}
+
+function downloadText(filename, text){
+  var blob = new Blob(['﻿' + text], { type: 'text/plain;charset=utf-8' });
+  var url = URL.createObjectURL(blob);
+  var a = document.createElement('a');
+  a.href = url; a.download = filename;
+  document.body.appendChild(a); a.click();
+  setTimeout(function(){ document.body.removeChild(a); URL.revokeObjectURL(url); }, 100);
+}
+
+function generateWeeklyReport(){
+  // 1) 月曆改為固定 試驗課 → 研測課 → 其他
+  reorderPersonnelBySection();
+  renderAll();
+  autoCloudSave();
+  // 2) 產生兩份文字檔（下週）
+  var range = getNextWeekRange();
+  var dtag  = range.start.replace(/-/g,'') + '-' + range.end.replace(/-/g,'');
+  var testTxt     = buildSectionReport('test',     '試驗課', range);
+  var researchTxt = buildSectionReport('research', '研測課', range);
+  downloadText('NDT試驗課_下週週報_' + dtag + '.txt', testTxt);
+  setTimeout(function(){ downloadText('NDT研測課_下週週報_' + dtag + '.txt', researchTxt); }, 500);
+  alert('已完成週報：\n・月曆已依「試驗課 → 研測課 → 其他」重新排序\n・已下載 試驗課、研測課 兩份下週工作文字檔\n（若瀏覽器詢問是否下載多個檔案，請按允許）');
+}
+
 
 // ============== TAIWAN NATIONAL HOLIDAYS ==============
 function getTaiwanHolidays(year) {
