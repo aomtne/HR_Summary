@@ -378,11 +378,11 @@ function syncAssignmentToSheet(record) {
 
 // ============== DATA ==============
 var ALL_PERSONNEL = [
-  "蘇逸彥","蔡武哲","林炳宏","林宏儒","林士瑄","陳柏均","黃鴻鈞","李家緯",
-  "吳志成","黃嵩捷","楊竣宇","鍾銘軒","李振誠","陳政瑋","吳宇軒",
-  "徐振華","呂侑儒","李晨鍠","張謙凌","邱重豪","廖元瑜","張志玄",
-  "李昇晉","張瑋岑","蔡瀚承","朱彥豪","陳擎","吳祖年","陳廉淞",
-  "陳嘉濬","曾建銘","王于任","吳喬隆","李祐誠","吳忠憲","王冠博","楊智名","林時沂","張綺真","陳思豪"
+  "蔡武哲",
+  /* 試驗課(1404) */
+  "林宏儒","陳柏均","李家緯","黃嵩捷","楊竣宇","呂侑儒","吳宇軒","李晨鍠","邱重豪","蔡瀚承","陳擎","吳祖年","陳思豪",
+  /* 研測課(1405) */
+  "林炳宏","林士瑄","黃鴻鈞","吳志成","鍾銘軒","李振誠","陳政瑋","徐振華","張謙凌","張志玄","李昇晉","張瑋岑","朱彥豪","陳廉淞"
 ];
 
 var CATEGORY_COLORS = {
@@ -396,8 +396,10 @@ var CATEGORY_COLORS = {
 };
 
 // ============== SECTION (課別) 週報 ==============
-var SECTION_TEST     = ["林炳宏","陳柏均","李家緯","黃嵩捷","楊竣宇","呂侑儒","吳宇軒","李晨鍠","邱重豪","廖元瑜","蔡瀚承","陳擎","吳祖年","陳思豪"];
-var SECTION_RESEARCH = ["林宏儒","林士瑄","黃鴻鈞","吳志成","鍾銘軒","李振誠","陳政瑋","徐振華","張謙凌","張志玄","李昇晉","張瑋岑","朱彥豪","陳廉淞"];
+// 試驗課(1404)：課長 林宏儒
+var SECTION_TEST     = ["林宏儒","陳柏均","李家緯","黃嵩捷","楊竣宇","呂侑儒","吳宇軒","李晨鍠","邱重豪","蔡瀚承","陳擎","吳祖年","陳思豪"];
+// 研測課(1405)：課長 林炳宏
+var SECTION_RESEARCH = ["林炳宏","林士瑄","黃鴻鈞","吳志成","鍾銘軒","李振誠","陳政瑋","徐振華","張謙凌","張志玄","李昇晉","張瑋岑","朱彥豪","陳廉淞"];
 
 function getPersonSection(name){
   if (SECTION_TEST.indexOf(name) !== -1) return 'test';
@@ -409,8 +411,6 @@ function sectionRank(name){
   i = SECTION_RESEARCH.indexOf(name);     if (i !== -1) return [1, i];
   return [2, 0];
 }
-
-// 依課別（試驗課→研測課→其他）重新排序月曆人員，並固定保存
 function reorderPersonnelBySection(){
   activePersonnel = activePersonnel.slice().sort(function(a,b){
     var ra = sectionRank(a), rb = sectionRank(b);
@@ -419,8 +419,6 @@ function reorderPersonnelBySection(){
   });
   localStorage.setItem('ndt_activePersonnel', JSON.stringify(activePersonnel));
 }
-
-// 下週一～週日範圍（以今天為基準）
 function getNextWeekRange(){
   var t = new Date();
   var day = t.getDay();
@@ -429,22 +427,18 @@ function getNextWeekRange(){
   var nextSun = new Date(nextMon); nextSun.setDate(nextMon.getDate() + 6);
   return { start: fmtLocalDate(nextMon), end: fmtLocalDate(nextSun), startD: nextMon, endD: nextSun };
 }
-
 function fmtSlash(ds){ var p = ds.split('-'); return p[0] + '/' + p[1] + '/' + p[2]; }
 function fmtSlashWeekday(d){
   var wd = ['日','一','二','三','四','五','六'][d.getDay()];
   return d.getFullYear() + '/' + String(d.getMonth()+1).padStart(2,'0') + '/' + String(d.getDate()).padStart(2,'0') + '（' + wd + '）';
 }
-
-// 建立某課別下週工作報表文字
 function buildSectionReport(sectionKey, sectionName, range){
   var recs = assignments.filter(function(a){
     if (getPersonSection(a.person) !== sectionKey) return false;
     var s = normDate(a.start), e = normDate(a.end);
     if (!s || !e) return false;
-    return s <= range.end && e >= range.start;   // 與下週重疊
+    return s <= range.end && e >= range.start;
   });
-  // 分組：類別 + 備註 + 地點 + 起 + 訖
   var groups = [];
   recs.forEach(function(a){
     var key = (a.category||'') + '|' + (a.note||'') + '|' + (a.location||'') + '|' + a.start + '|' + a.end;
@@ -456,7 +450,6 @@ function buildSectionReport(sectionKey, sectionName, range){
   var order = (sectionKey === 'test') ? SECTION_TEST : SECTION_RESEARCH;
   groups.forEach(function(g){ g.persons.sort(function(x,y){ return order.indexOf(x) - order.indexOf(y); }); });
   groups.sort(function(a,b){ return a.start.localeCompare(b.start) || a.category.localeCompare(b.category); });
-
   var now = new Date();
   var ts = now.getFullYear() + '/' + String(now.getMonth()+1).padStart(2,'0') + '/' + String(now.getDate()).padStart(2,'0') + ' ' + String(now.getHours()).padStart(2,'0') + ':' + String(now.getMinutes()).padStart(2,'0');
   var L = [];
@@ -486,7 +479,6 @@ function buildSectionReport(sectionKey, sectionName, range){
   }
   return L.join('\r\n');
 }
-
 function downloadText(filename, text){
   var blob = new Blob(['﻿' + text], { type: 'text/plain;charset=utf-8' });
   var url = URL.createObjectURL(blob);
@@ -495,20 +487,17 @@ function downloadText(filename, text){
   document.body.appendChild(a); a.click();
   setTimeout(function(){ document.body.removeChild(a); URL.revokeObjectURL(url); }, 100);
 }
-
 function generateWeeklyReport(){
-  // 1) 月曆改為固定 試驗課 → 研測課 → 其他
   reorderPersonnelBySection();
   renderAll();
   autoCloudSave();
-  // 2) 產生兩份文字檔（下週）
   var range = getNextWeekRange();
   var dtag  = range.start.replace(/-/g,'') + '-' + range.end.replace(/-/g,'');
   var testTxt     = buildSectionReport('test',     '試驗課', range);
   var researchTxt = buildSectionReport('research', '研測課', range);
   downloadText('NDT試驗課_下週週報_' + dtag + '.txt', testTxt);
   setTimeout(function(){ downloadText('NDT研測課_下週週報_' + dtag + '.txt', researchTxt); }, 500);
-  alert('已完成週報：\n・月曆已依「試驗課 → 研測課 → 其他」重新排序\n・已下載 試驗課、研測課 兩份下週工作文字檔\n（若瀏覽器詢問是否下載多個檔案，請按允許）');
+  alert('已完成週報：\n・月曆已依「試驗課 → 研測課」重新排序\n・已下載 試驗課、研測課 兩份下週工作文字檔\n（若瀏覽器詢問是否下載多個檔案，請按允許）');
 }
 
 
@@ -567,7 +556,12 @@ function getTaiwanHolidays(year) {
 }
 
 // ============== STATE ==============
-var activePersonnel = JSON.parse(localStorage.getItem('ndt_activePersonnel') || 'null') || ALL_PERSONNEL.slice();
+function sanitizeActive(list){
+  if (!list || !list.length) return ALL_PERSONNEL.slice();
+  var out = list.filter(function(n){ return ALL_PERSONNEL.indexOf(n) !== -1; });
+  return out.length ? out : ALL_PERSONNEL.slice();
+}
+var activePersonnel = sanitizeActive(JSON.parse(localStorage.getItem('ndt_activePersonnel') || 'null'));
 var assignments = JSON.parse(localStorage.getItem('ndt_assignments') || '[]');
 var currentYear, currentMonth;
 var pendingDeleteId = null;
@@ -694,7 +688,7 @@ function cloudLoad(silent) {
     .then(function(data) {
       if (data.success) {
         if (data.activePersonnel && data.activePersonnel.length > 0) {
-          activePersonnel = data.activePersonnel;
+          activePersonnel = sanitizeActive(data.activePersonnel);
           localStorage.setItem('ndt_activePersonnel', JSON.stringify(activePersonnel));
         }
         if (data.assignments) {
