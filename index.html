@@ -22,6 +22,14 @@
   .check-grid label { display: flex; align-items: center; gap: 4px; padding: 3px 6px; border-radius: 4px; cursor: pointer; font-size: 12px; white-space: nowrap; }
   .check-grid label:hover { background: #eaf2f8; }
   .check-grid label.checked { background: #d4efdf; font-weight: bold; }
+  /* 協力商：琥珀色調 */
+  .check-grid label.contractor { background: #fff4e0; color: #8a5300; box-shadow: inset 3px 0 0 #d68910; }
+  .check-grid label.contractor:hover { background: #fde8c4; }
+  .check-grid label.contractor.checked { background: #fad7a0; color: #6e4200; }
+  .contractor-divider { grid-column: 1 / -1; font-size: 12px; font-weight: bold; color: #8a5300; border-top: 1px dashed #e0a458; padding-top: 4px; margin-top: 2px; }
+  #calendarTable td.name-cell.contractor { background: #fdebd0; color: #8a5300; box-shadow: inset 4px 0 0 #d68910; }
+  #calendarTable tr.contractor-row td:not(.name-cell):not(.assigned):not(.weekend):not(.holiday) { background: #fffaf2; }
+  #calendarTable tr.contractor-sep td { background: #f8e3c0 !important; color: #8a5300; font-weight: bold; font-size: 16px; text-align: left; padding-left: 8px; }
 
   .btn { padding: 6px 16px; border: none; border-radius: 4px; cursor: pointer; font-size: 13px; font-weight: bold; }
   .btn-sm { padding: 3px 12px; font-size: 12px; }
@@ -382,8 +390,14 @@ var ALL_PERSONNEL = [
   /* 試驗課(1404) */
   "林宏儒","陳柏均","李家緯","黃嵩捷","楊竣宇","呂侑儒","吳宇軒","李晨鍠","邱重豪","蔡瀚承","陳擎","吳祖年","陳思豪",
   /* 研測課(1405) */
-  "林炳宏","林士瑄","黃鴻鈞","吳志成","鍾銘軒","李振誠","陳政瑋","徐振華","張謙凌","張志玄","李昇晉","張瑋岑","朱彥豪","陳廉淞"
+  "林炳宏","林士瑄","黃鴻鈞","吳志成","鍾銘軒","李振誠","陳政瑋","徐振華","張謙凌","張志玄","李昇晉","張瑋岑","朱彥豪","陳廉淞",
+  /* 協力商（不計入可用人力） */
+  "徐梧翔","黃哲龍","劉宜慧","曹俞","張福桐","秦崇議","陳裕嶧"
 ];
+// 協力商名單：另以琥珀色調顯示，不納入「已派出人數／剩餘可用人力」與課別週報
+var CONTRACTORS = ["徐梧翔","黃哲龍","劉宜慧","曹俞","張福桐","秦崇議","陳裕嶧"];
+function isContractor(name){ return CONTRACTORS.indexOf(name) !== -1; }
+function countStaff(list){ return list.filter(function(n){ return !isContractor(n); }).length; }
 
 var CATEGORY_COLORS = {
   "大修工作":      "#1565C0",   /* 強藍   */
@@ -404,11 +418,13 @@ var SECTION_RESEARCH = ["林炳宏","林士瑄","黃鴻鈞","吳志成","鍾銘�
 function getPersonSection(name){
   if (SECTION_TEST.indexOf(name) !== -1) return 'test';
   if (SECTION_RESEARCH.indexOf(name) !== -1) return 'research';
+  if (isContractor(name)) return 'contractor';
   return 'other';
 }
 function sectionRank(name){
   var i = SECTION_TEST.indexOf(name);     if (i !== -1) return [0, i];
   i = SECTION_RESEARCH.indexOf(name);     if (i !== -1) return [1, i];
+  i = CONTRACTORS.indexOf(name);          if (i !== -1) return [3, i];
   return [2, 0];
 }
 function reorderPersonnelBySection(){
@@ -559,7 +575,11 @@ function getTaiwanHolidays(year) {
 function sanitizeActive(list){
   if (!list || !list.length) return ALL_PERSONNEL.slice();
   var out = list.filter(function(n){ return ALL_PERSONNEL.indexOf(n) !== -1; });
-  return out.length ? out : ALL_PERSONNEL.slice();
+  if (!out.length) return ALL_PERSONNEL.slice();
+  // 舊資料（本機或雲端）尚無協力商時，自動補入
+  var hasAnyContractor = out.some(function(n){ return isContractor(n); });
+  if (!hasAnyContractor) out = out.concat(CONTRACTORS);
+  return out;
 }
 var activePersonnel = sanitizeActive(JSON.parse(localStorage.getItem('ndt_activePersonnel') || 'null'));
 var assignments = JSON.parse(localStorage.getItem('ndt_assignments') || '[]');
@@ -701,7 +721,7 @@ function cloudLoad(silent) {
           localStorage.setItem('ndt_assignments', JSON.stringify(assignments));
         }
         renderAll();
-        logSync('載入成功！人員 ' + activePersonnel.length + ' 人，派工 ' + assignments.length + ' 筆');
+        logSync('載入成功！人員 ' + countStaff(activePersonnel) + ' 人（協力商 ' + (activePersonnel.length - countStaff(activePersonnel)) + ' 人），派工 ' + assignments.length + ' 筆');
       } else {
         logSync('載入失敗：' + (data.error || '未知錯誤'));
       }
@@ -732,11 +752,17 @@ function togglePanel(contentId, btn) {
 function renderPersonnelGrid() {
   var grid = document.getElementById('personnelGrid');
   grid.innerHTML = '';
+  var dividerAdded = false;
   ALL_PERSONNEL.forEach(function(name) {
     var isActive = activePersonnel.indexOf(name) !== -1;
+    var con = isContractor(name);
+    if (con && !dividerAdded) {
+      var dv = document.createElement('div'); dv.className = 'contractor-divider';
+      dv.textContent = '協力商（不計入可用人力）'; grid.appendChild(dv); dividerAdded = true;
+    }
     var lbl = document.createElement('label');
-    lbl.className = isActive ? 'checked' : '';
-    lbl.innerHTML = '<input type="checkbox" value="' + name + '" ' + (isActive ? 'checked' : '') + ' onchange="this.parentElement.className=this.checked?\'checked\':\'\'"> ' + name;
+    lbl.className = (con ? 'contractor ' : '') + (isActive ? 'checked' : '');
+    lbl.innerHTML = '<input type="checkbox" value="' + name + '" ' + (isActive ? 'checked' : '') + ' onchange="this.parentElement.classList.toggle(\'checked\', this.checked)"> ' + name;
     grid.appendChild(lbl);
   });
 }
@@ -744,7 +770,7 @@ function renderPersonnelGrid() {
 function selectAllPersonnel(val) {
   document.querySelectorAll('#personnelGrid input[type=checkbox]').forEach(function(cb) {
     cb.checked = val;
-    cb.parentElement.className = val ? 'checked' : '';
+    cb.parentElement.classList.toggle('checked', val);
   });
 }
 
@@ -755,16 +781,24 @@ function confirmPersonnel() {
   localStorage.setItem('ndt_activePersonnel', JSON.stringify(activePersonnel));
   renderAll();
   autoCloudSave();
-  alert('已更新！目前工作人員共 ' + activePersonnel.length + ' 人');
+  var _cc = activePersonnel.length - countStaff(activePersonnel);
+  alert('已更新！目前工作人員共 ' + countStaff(activePersonnel) + ' 人' + (_cc ? '（另有協力商 ' + _cc + ' 人）' : ''));
 }
 
 // ============== ASSIGN PERSON GRID ==============
 function renderAssignPersonGrid() {
   var grid = document.getElementById('assignPersonGrid');
   grid.innerHTML = '';
+  var dividerAdded = false;
   activePersonnel.forEach(function(name) {
+    var con = isContractor(name);
+    if (con && !dividerAdded) {
+      var dv = document.createElement('div'); dv.className = 'contractor-divider';
+      dv.textContent = '協力商'; grid.appendChild(dv); dividerAdded = true;
+    }
     var lbl = document.createElement('label');
-    lbl.innerHTML = '<input type="checkbox" value="' + name + '" onchange="this.parentElement.className=this.checked?\'checked\':\'\'"> ' + name;
+    lbl.className = con ? 'contractor' : '';
+    lbl.innerHTML = '<input type="checkbox" value="' + name + '" onchange="this.parentElement.classList.toggle(\'checked\', this.checked)"> ' + name;
     grid.appendChild(lbl);
   });
 }
@@ -772,7 +806,7 @@ function renderAssignPersonGrid() {
 function selectAllAssignPerson(val) {
   document.querySelectorAll('#assignPersonGrid input[type=checkbox]').forEach(function(cb) {
     cb.checked = val;
-    cb.parentElement.className = val ? 'checked' : '';
+    cb.parentElement.classList.toggle('checked', val);
   });
 }
 
@@ -1123,9 +1157,12 @@ function renderMonthlyCalendar() {
 
   var dailyDeployed = new Array(days).fill(0);
 
-  activePersonnel.forEach(function(person, idx) {
+  var _sepDone = false;
+  calendarOrder().forEach(function(person, idx) {
     var isOdd = idx % 2 === 1;
-    html += '<tr><td class="name-cell ' + (isOdd ? 'odd' : '') + '">' + person + '</td>';
+    var con = isContractor(person);
+    if (con && !_sepDone) { html += '<tr class="contractor-sep"><td class="name-cell" style="background:#f8e3c0!important;">協力商</td><td colspan="' + days + '">不計入已派出人數／剩餘可用人力</td></tr>'; _sepDone = true; }
+    html += '<tr' + (con ? ' class="contractor-row"' : '') + '><td class="name-cell ' + (con ? 'contractor' : (isOdd ? 'odd' : '')) + '">' + person + '</td>';
     for (var d = 1; d <= days; d++) {
       var ds  = dateStr(currentYear, currentMonth, d);
       var dow = getDayOfWeek(currentYear, currentMonth, d);
@@ -1136,7 +1173,7 @@ function renderMonthlyCalendar() {
       var cls = (isToday ? ' today' : '') + (isHoliday ? ' holiday' : (isWeekend ? ' weekend' : ''));
 
       if (matched.length > 1) {
-        dailyDeployed[d-1]++;
+        if (!con) dailyDeployed[d-1]++;
         var title = '⚠ 重疊派工：\n' + matched.map(function(ma){
           return ma.category + (ma.note?'('+ma.note+')':'') + ' ' + ma.start+'~'+ma.end;
         }).join('\n');
@@ -1144,7 +1181,7 @@ function renderMonthlyCalendar() {
       } else if (matched.length === 1) {
         var a = matched[0];
         var color = CATEGORY_COLORS[a.category] || '#999';
-        dailyDeployed[d-1]++;
+        if (!con) dailyDeployed[d-1]++;
         var title = a.category + (a.empId?'\n工號：'+a.empId:'') + (a.location?'\n地點：'+a.location:'') + (a.note?'\n備註：'+a.note:'') + '\n' + a.start+' ~ '+a.end;
         var _t = a.note || a.category;
         var abbr = _t.length > 2 ? _t.substring(0, 2) : _t;
@@ -1156,7 +1193,7 @@ function renderMonthlyCalendar() {
     html += '</tr>';
   });
 
-  var total = activePersonnel.length;
+  var total = countStaff(activePersonnel);
   html += '<tr class="summary-row"><td class="summary-label name-cell" style="background:#fef9e7!important;">已派出人數</td>';
   for (var d = 1; d <= days; d++) {
     var dow = getDayOfWeek(currentYear, currentMonth, d);
@@ -1180,6 +1217,10 @@ function renderMonthlyCalendar() {
   table.innerHTML = html;
 }
 
+function calendarOrder(){
+  return activePersonnel.filter(function(n){ return !isContractor(n); })
+    .concat(activePersonnel.filter(function(n){ return isContractor(n); }));
+}
 function renderCalendar() {
   if (viewMode === 'monthly') renderMonthlyCalendar();
   else renderBiweeklyCalendar();
@@ -1253,9 +1294,12 @@ function renderBiweeklyCalendar() {
 
   var dailyDeployed = new Array(14).fill(0);
 
-  activePersonnel.forEach(function(person, idx) {
+  var _sepDone2 = false;
+  calendarOrder().forEach(function(person, idx) {
     var isOdd = idx % 2 === 1;
-    html += '<tr><td class="name-cell ' + (isOdd ? 'odd' : '') + '">' + person + '</td>';
+    var con = isContractor(person);
+    if (con && !_sepDone2) { html += '<tr class="contractor-sep"><td class="name-cell" style="background:#f8e3c0!important;">協力商</td><td colspan="14">不計入已派出人數／剩餘可用人力</td></tr>'; _sepDone2 = true; }
+    html += '<tr' + (con ? ' class="contractor-row"' : '') + '><td class="name-cell ' + (con ? 'contractor' : (isOdd ? 'odd' : '')) + '">' + person + '</td>';
     dates.forEach(function(info, i) {
       var ds = info.ds;
       var isWeekend = info.dow === 0 || info.dow === 6;
@@ -1276,7 +1320,7 @@ function renderBiweeklyCalendar() {
       var sepStyle = (i === 7) ? 'border-left:3px solid #2980b9;' : '';
 
       if (matchedAssigns.length > 1) {
-        dailyDeployed[i]++;
+        if (!con) dailyDeployed[i]++;
         var titleParts = matchedAssigns.map(function(ma) {
           return ma.category + (ma.note ? '(' + ma.note + ')' : '') + ' ' + ma.start + '~' + ma.end;
         });
@@ -1287,7 +1331,7 @@ function renderBiweeklyCalendar() {
       } else if (matchedAssigns.length === 1) {
         var a = matchedAssigns[0];
         var color = CATEGORY_COLORS[a.category] || '#999';
-        dailyDeployed[i]++;
+        if (!con) dailyDeployed[i]++;
         var title = a.category +
           (a.empId ? '\n工號：' + a.empId : '') +
           (a.location ? '\n地點：' + a.location : '') +
@@ -1306,7 +1350,7 @@ function renderBiweeklyCalendar() {
     html += '</tr>';
   });
 
-  var total = activePersonnel.length;
+  var total = countStaff(activePersonnel);
   html += '<tr class="summary-row"><td class="summary-label name-cell" style="background:#fef9e7 !important;">已派出人數</td>';
   dates.forEach(function(info, i) {
     var isHoliday = !!holidays[info.ds];
@@ -1462,7 +1506,7 @@ function extractScheduleFromLocalData() {
   var thisWeekJobs = []; var thisWeekPersons = new Set();
   assignments.forEach(function(a) {
     if (a.start && a.end && a.start <= ranges.thisWeek.end && a.end >= ranges.thisWeek.start) {
-      thisWeekPersons.add(a.person);
+      if (!isContractor(a.person)) thisWeekPersons.add(a.person);
       var existingJob = thisWeekJobs.find(function(j) { return j.category === a.category && j.start === a.start && j.end === a.end; });
       if (existingJob) { if (existingJob.persons.indexOf(a.person) === -1) existingJob.persons.push(a.person); } else { thisWeekJobs.push({ category: a.category, note: a.note, start: a.start, end: a.end, persons: [a.person] }); }
     }
@@ -1470,12 +1514,12 @@ function extractScheduleFromLocalData() {
   var nextWeekJobs = []; var nextWeekPersons = new Set();
   assignments.forEach(function(a) {
     if (a.start && a.end && a.start <= ranges.nextWeek.end && a.end >= ranges.nextWeek.start) {
-      nextWeekPersons.add(a.person);
+      if (!isContractor(a.person)) nextWeekPersons.add(a.person);
       var existingJob = nextWeekJobs.find(function(j) { return j.category === a.category && j.start === a.start && j.end === a.end; });
       if (existingJob) { if (existingJob.persons.indexOf(a.person) === -1) existingJob.persons.push(a.person); } else { nextWeekJobs.push({ category: a.category, note: a.note, start: a.start, end: a.end, persons: [a.person] }); }
     }
   });
-  var totalPersons = activePersonnel.length;
+  var totalPersons = countStaff(activePersonnel);
   localStorage.setItem('scheduleData_thisWeek', JSON.stringify({ week: 'thisWeek', title: '本週排程', itemCount: thisWeekJobs.length, jobs: thisWeekJobs, assignedPersons: Array.from(thisWeekPersons), availablePersons: totalPersons - thisWeekPersons.size, dateRange: ranges.thisWeek, lastUpdated: new Date().toISOString(), source: 'google_sheets' }));
   localStorage.setItem('scheduleData_nextWeek', JSON.stringify({ week: 'nextWeek', title: '下週預定排程', itemCount: nextWeekJobs.length, jobs: nextWeekJobs, assignedPersons: Array.from(nextWeekPersons), availablePersons: totalPersons - nextWeekPersons.size, dateRange: ranges.nextWeek, lastUpdated: new Date().toISOString(), source: 'google_sheets' }));
   console.log('✅ 本週派工: ' + thisWeekJobs.length + ' 項, ' + thisWeekPersons.size + ' 人');
