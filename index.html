@@ -26,7 +26,14 @@
   .check-grid label.contractor { background: #fff4e0; color: #8a5300; box-shadow: inset 3px 0 0 #d68910; }
   .check-grid label.contractor:hover { background: #fde8c4; }
   .check-grid label.contractor.checked { background: #fad7a0; color: #6e4200; }
-  .contractor-divider { grid-column: 1 / -1; font-size: 12px; font-weight: bold; color: #8a5300; border-top: 1px dashed #e0a458; padding-top: 4px; margin-top: 2px; }
+  .contractor-divider { grid-column: 1 / -1; font-size: 12px; font-weight: bold; color: #8a5300; border-top: 1px dashed #e0a458; padding: 4px 6px 2px; margin-top: 2px; cursor: pointer; user-select: none; }
+  .contractor-divider:hover, #calendarTable tr.contractor-sep:hover td { filter: brightness(0.96); }
+  /* 協力商區塊收合 */
+  .con-toggle::before { content: '▼ '; }
+  body.con-collapsed .con-toggle::before { content: '▶ '; }
+  body.con-collapsed .check-grid label.contractor,
+  body.con-collapsed #calendarTable tr.contractor-row { display: none; }
+  #calendarTable tr.contractor-sep { cursor: pointer; user-select: none; }
   #calendarTable td.name-cell.contractor { background: #fdebd0; color: #8a5300; box-shadow: inset 4px 0 0 #d68910; }
   #calendarTable tr.contractor-row td:not(.name-cell):not(.assigned):not(.weekend):not(.holiday) { background: #fffaf2; }
   #calendarTable tr.contractor-sep td { background: #f8e3c0 !important; color: #8a5300; font-weight: bold; font-size: 16px; text-align: left; padding-left: 8px; }
@@ -142,7 +149,7 @@
   }
 </style>
 </head>
-<body>
+<body class="con-collapsed">
 
 <!-- Header -->
 <div class="header">
@@ -392,10 +399,28 @@ var ALL_PERSONNEL = [
   /* 研測課(1405) */
   "林炳宏","林士瑄","黃鴻鈞","吳志成","鍾銘軒","李振誠","陳政瑋","徐振華","張謙凌","張志玄","李昇晉","張瑋岑","朱彥豪","陳廉淞",
   /* 協力商（不計入可用人力） */
-  "徐梧翔","黃哲龍","劉宜慧","曹俞","張福桐","秦崇議","陳裕嶧"
+  "徐梧翔","黃哲龍","劉宜慧","曹諭","張福桐","秦崇議","陳裕嶧"
 ];
 // 協力商名單：另以琥珀色調顯示，不納入「已派出人數／剩餘可用人力」與課別週報
-var CONTRACTORS = ["徐梧翔","黃哲龍","劉宜慧","曹俞","張福桐","秦崇議","陳裕嶧"];
+var CONTRACTORS = ["徐梧翔","黃哲龍","劉宜慧","曹諭","張福桐","秦崇議","陳裕嶧"];
+// 更名對照（舊名 → 新名），載入舊資料時自動轉換
+var NAME_RENAMES = { "曹俞": "曹諭" };
+function renameName(n){ return NAME_RENAMES[n] || n; }
+function migrateAssignmentNames(list){
+  (list || []).forEach(function(a){ if (a && a.person) a.person = renameName(a.person); });
+  return list;
+}
+function toggleContractors(){
+  document.body.classList.toggle('con-collapsed');
+  if (document.body.classList.contains('con-collapsed')) {
+    // 收合時取消派工輸入中已勾選的協力商，避免誤派
+    document.querySelectorAll('#assignPersonGrid label.contractor input:checked').forEach(function(cb){
+      cb.checked = false; cb.parentElement.classList.remove('checked');
+    });
+  }
+  if (typeof resizeCalendar === 'function') setTimeout(resizeCalendar, 60);
+}
+function contractorsHidden(){ return document.body.classList.contains('con-collapsed'); }
 function isContractor(name){ return CONTRACTORS.indexOf(name) !== -1; }
 function countStaff(list){ return list.filter(function(n){ return !isContractor(n); }).length; }
 
@@ -574,7 +599,7 @@ function getTaiwanHolidays(year) {
 // ============== STATE ==============
 function sanitizeActive(list){
   if (!list || !list.length) return ALL_PERSONNEL.slice();
-  var out = list.filter(function(n){ return ALL_PERSONNEL.indexOf(n) !== -1; });
+  var out = list.map(renameName).filter(function(n, i, arr){ return ALL_PERSONNEL.indexOf(n) !== -1 && arr.indexOf(n) === i; });
   if (!out.length) return ALL_PERSONNEL.slice();
   // 舊資料（本機或雲端）尚無協力商時，自動補入
   var hasAnyContractor = out.some(function(n){ return isContractor(n); });
@@ -582,7 +607,7 @@ function sanitizeActive(list){
   return out;
 }
 var activePersonnel = sanitizeActive(JSON.parse(localStorage.getItem('ndt_activePersonnel') || 'null'));
-var assignments = JSON.parse(localStorage.getItem('ndt_assignments') || '[]');
+var assignments = migrateAssignmentNames(JSON.parse(localStorage.getItem('ndt_assignments') || '[]'));
 var currentYear, currentMonth;
 var pendingDeleteId = null;
 
@@ -716,6 +741,7 @@ function cloudLoad(silent) {
           assignments = data.assignments.map(function(a) {
             a.start = normDate(a.start);
             a.end   = normDate(a.end);
+            a.person = renameName(a.person);
             return a;
           });
           localStorage.setItem('ndt_assignments', JSON.stringify(assignments));
@@ -758,7 +784,7 @@ function renderPersonnelGrid() {
     var con = isContractor(name);
     if (con && !dividerAdded) {
       var dv = document.createElement('div'); dv.className = 'contractor-divider';
-      dv.textContent = '協力商（不計入可用人力）'; grid.appendChild(dv); dividerAdded = true;
+      dv.innerHTML = '<span class="con-toggle"></span>協力商（' + CONTRACTORS.length + ' 人，不計入可用人力）'; dv.onclick = toggleContractors; grid.appendChild(dv); dividerAdded = true;
     }
     var lbl = document.createElement('label');
     lbl.className = (con ? 'contractor ' : '') + (isActive ? 'checked' : '');
@@ -769,6 +795,7 @@ function renderPersonnelGrid() {
 
 function selectAllPersonnel(val) {
   document.querySelectorAll('#personnelGrid input[type=checkbox]').forEach(function(cb) {
+    if (contractorsHidden() && cb.parentElement.classList.contains('contractor')) return;
     cb.checked = val;
     cb.parentElement.classList.toggle('checked', val);
   });
@@ -794,7 +821,7 @@ function renderAssignPersonGrid() {
     var con = isContractor(name);
     if (con && !dividerAdded) {
       var dv = document.createElement('div'); dv.className = 'contractor-divider';
-      dv.textContent = '協力商'; grid.appendChild(dv); dividerAdded = true;
+      dv.innerHTML = '<span class="con-toggle"></span>協力商（' + CONTRACTORS.filter(function(n){ return activePersonnel.indexOf(n) !== -1; }).length + ' 人）'; dv.onclick = toggleContractors; grid.appendChild(dv); dividerAdded = true;
     }
     var lbl = document.createElement('label');
     lbl.className = con ? 'contractor' : '';
@@ -805,6 +832,7 @@ function renderAssignPersonGrid() {
 
 function selectAllAssignPerson(val) {
   document.querySelectorAll('#assignPersonGrid input[type=checkbox]').forEach(function(cb) {
+    if (contractorsHidden() && cb.parentElement.classList.contains('contractor')) return;
     cb.checked = val;
     cb.parentElement.classList.toggle('checked', val);
   });
@@ -1161,7 +1189,7 @@ function renderMonthlyCalendar() {
   calendarOrder().forEach(function(person, idx) {
     var isOdd = idx % 2 === 1;
     var con = isContractor(person);
-    if (con && !_sepDone) { html += '<tr class="contractor-sep"><td class="name-cell" style="background:#f8e3c0!important;">協力商</td><td colspan="' + days + '">不計入已派出人數／剩餘可用人力</td></tr>'; _sepDone = true; }
+    if (con && !_sepDone) { html += '<tr class="contractor-sep" onclick="toggleContractors()"><td class="name-cell" style="background:#f8e3c0!important;"><span class="con-toggle"></span>協力商（' + CONTRACTORS.filter(function(n){ return activePersonnel.indexOf(n) !== -1; }).length + '）</td><td colspan="' + days + '">點擊展開／收合（不計入已派出人數／剩餘可用人力）</td></tr>'; _sepDone = true; }
     html += '<tr' + (con ? ' class="contractor-row"' : '') + '><td class="name-cell ' + (con ? 'contractor' : (isOdd ? 'odd' : '')) + '">' + person + '</td>';
     for (var d = 1; d <= days; d++) {
       var ds  = dateStr(currentYear, currentMonth, d);
@@ -1298,7 +1326,7 @@ function renderBiweeklyCalendar() {
   calendarOrder().forEach(function(person, idx) {
     var isOdd = idx % 2 === 1;
     var con = isContractor(person);
-    if (con && !_sepDone2) { html += '<tr class="contractor-sep"><td class="name-cell" style="background:#f8e3c0!important;">協力商</td><td colspan="14">不計入已派出人數／剩餘可用人力</td></tr>'; _sepDone2 = true; }
+    if (con && !_sepDone2) { html += '<tr class="contractor-sep" onclick="toggleContractors()"><td class="name-cell" style="background:#f8e3c0!important;"><span class="con-toggle"></span>協力商（' + CONTRACTORS.filter(function(n){ return activePersonnel.indexOf(n) !== -1; }).length + '）</td><td colspan="14">點擊展開／收合（不計入已派出人數／剩餘可用人力）</td></tr>'; _sepDone2 = true; }
     html += '<tr' + (con ? ' class="contractor-row"' : '') + '><td class="name-cell ' + (con ? 'contractor' : (isOdd ? 'odd' : '')) + '">' + person + '</td>';
     dates.forEach(function(info, i) {
       var ds = info.ds;
