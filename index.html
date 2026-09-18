@@ -338,57 +338,198 @@ function isGuestUser() {
   return u && u.role === 'guest';
 }
 
-// ═══ HR SYNC TO GOOGLE SHEETS ═══
-function syncDeleteToSheet(id) {
-  try {
-    var url = getWebAppUrl();
-    if (!url) { console.warn('未設定 Web App URL，無法同步刪除'); return; }
-    var syncUrl = url + (url.indexOf('?') === -1 ? '?' : '&') +
-      'action=delete&id=' + encodeURIComponent(id);
-    fetch(syncUrl)
-      .then(function(r) { return r.json(); })
-      .then(function(data) {
-        if (data.success) {
-          console.log('✅ 已從 Google Sheets 刪除：' + id);
-          logSync('雲端刪除成功：' + id);
-        } else {
-          console.warn('雲端刪除失敗:', data.error || '未知錯誤');
-          logSync('雲端刪除失敗：' + (data.error || '未知錯誤'));
-        }
+// ═══ HR 增量同步層（逐筆 upsert + 樂觀鎖 + 衝突偵測）═══
+// 設計原則：
+//   1. 只送「有變更的那幾筆」，不再整表覆寫
+//   2. 每筆帶 updatedAt，伺服器發現雲端較新就回 conflict，由前端改用雲端版本
+//   3. 所有請求循序送出（不並發），避免 Apps Script 撞同時執行上限
+//   4. 一律讀取回應內容（不再用 mode:'no-cors'），失敗看得到原因
+var SYNC_TIMEOUT_MS = 15000;
+var syncBusy = false;
+
+function fetchJSONRetry(url, opts, retries) {
+  retries = (retries === undefined) ? 1 : retries;
+  var attempt = function(i) {
+    var ctrl = new AbortController();
+    var timer = setTimeout(function(){ ctrl.abort(); }, SYNC_TIMEOUT_MS);
+    return fetch(url, Object.assign({ redirect: 'follow', signal: ctrl.signal }, opts || {}))
+      .then(function(res) {
+        clearTimeout(timer);
+        if (!res.ok) throw new Error('HTTP ' + res.status);
+        return res.text();
+      })
+      .then(function(t) {
+        try { return JSON.parse(t); }
+        catch(e) { throw new Error('回傳不是 JSON（請確認 Apps Script 已部署新版本）'); }
       })
       .catch(function(err) {
-        console.warn('雲端刪除錯誤:', err);
-        logSync('雲端刪除錯誤：' + err.message);
+        clearTimeout(timer);
+        if (i < retries) {
+          return new Promise(function(r){ setTimeout(r, 1500 + Math.random() * 1000); }).then(function(){ return attempt(i + 1); });
+        }
+        throw err;
       });
-  } catch(e) { console.warn('syncDeleteToSheet error:', e); }
+  };
+  return attempt(0);
 }
 
+function apiGet(action, params) {
+  var url = getWebAppUrl();
+  if (!url) return Promise.reject(new Error('未設定 Web App 網址'));
+  var q = 'action=' + encodeURIComponent(action);
+  params = params || {};
+  for (var k in params) { if (params[k] !== undefined && params[k] !== null && params[k] !== '') q += '&' + k + '=' + encodeURIComponent(params[k]); }
+  return fetchJSONRetry(url + (url.indexOf('?') === -1 ? '?' : '&') + q, null);
+}
+
+function apiPost(payload) {
+  var url = getWebAppUrl();
+  if (!url) return Promise.reject(new Error('未設定 Web App 網址'));
+  return fetchJSONRetry(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+    body: JSON.stringify(payload)
+  });
+}
+
+// ── 已同步快照（用來算差異，key = id, value = 內容指紋）──
+function recSig(a) {
+  return [a.person, a.category, a.start, a.end, a.note || '', a.empId || '', a.location || '', a.maintainer || ''].join('|');
+}
+function getSnapshot() {
+  try { return JSON.parse(localStorage.getItem('ndt_syncedSnapshot') || '{}') || {}; } catch(e) { return {}; }
+}
+function setSnapshot(map) { localStorage.setItem('ndt_syncedSnapshot', JSON.stringify(map)); }
+function markSynced(rec) { var m = getSnapshot(); m[rec.id] = recSig(rec); setSnapshot(m); }
+function unmarkSynced(id) { var m = getSnapshot(); delete m[id]; setSnapshot(m); }
+function rebuildSnapshot() {
+  var m = {};
+  assignments.forEach(function(a){ m[a.id] = recSig(a); });
+  setSnapshot(m);
+}
+function hasLocalEdit(id) {
+  var m = getSnapshot();
+  var local = null;
+  for (var i = 0; i < assignments.length; i++) { if (assignments[i].id === id) { local = assignments[i]; break; } }
+  if (!local) return !!m[id];              // 本機已刪、雲端還有 → 算本機有未同步的變更
+  return m[id] !== recSig(local);
+}
+function setCursor(t) { if (t) localStorage.setItem('ndt_syncCursor', t); }
+function getCursor() { return localStorage.getItem('ndt_syncCursor') || ''; }
+
+// ── 把伺服器版本套用到本機（回傳是否真的有變）──
+function applyServerRecord(srv) {
+  if (!srv || !srv.id) return false;
+  var idx = -1;
+  for (var i = 0; i < assignments.length; i++) { if (assignments[i].id === srv.id) { idx = i; break; } }
+  if (srv.deleted) {
+    if (idx === -1) { unmarkSynced(srv.id); return false; }
+    assignments.splice(idx, 1);
+    unmarkSynced(srv.id);
+    saveAssignments();
+    return true;
+  }
+  var rec = {
+    id: srv.id, person: renameName(srv.person), category: srv.category,
+    start: normDate(srv.start), end: normDate(srv.end), note: srv.note || '',
+    empId: srv.empId || '', location: srv.location || '', maintainer: srv.maintainer || '',
+    updatedAt: srv.updatedAt || ''
+  };
+  if (idx === -1) assignments.push(rec);
+  else if (recSig(assignments[idx]) === recSig(rec) && assignments[idx].updatedAt === rec.updatedAt) { markSynced(rec); return false; }
+  else assignments[idx] = rec;
+  markSynced(rec);
+  saveAssignments();
+  return true;
+}
+
+// ── 單筆 upsert（含衝突處理）──
+function upsertAssignment(rec) {
+  var user = getLoggedInUser();
+  return apiPost({
+    action: 'upsertHr',
+    record: rec,
+    maintainer: user ? user.account : (rec.maintainer || '')
+  }).then(function(res) {
+    if (res && res.success) {
+      rec.updatedAt = res.updatedAt || new Date().toISOString();
+      markSynced(rec);
+      saveAssignments();
+      return 'ok';
+    }
+    if (res && res.conflict) {
+      if (res.server) applyServerRecord(res.server);
+      logSync('⚠ 衝突：' + (rec.person || '') + ' ' + (rec.category || '') +
+              ' 已被「' + ((res.server && res.server.maintainer) || '他人') + '」修改，已改用雲端版本');
+      return 'conflict';
+    }
+    logSync('上傳失敗（' + (rec.person || '') + '）：' + ((res && res.error) || '未知錯誤'));
+    return 'fail';
+  }).catch(function(e) {
+    logSync('上傳錯誤（' + (rec.person || '') + '）：' + e.message);
+    return 'fail';
+  });
+}
+
+// ── 單筆刪除（雲端軟刪除，讓其他人也會同步到這個刪除）──
+function deleteAssignmentRemote(id, updatedAt) {
+  return apiPost({ action: 'deleteHr', id: id, updatedAt: updatedAt || '' })
+    .then(function(res) {
+      if (res && res.success) { unmarkSynced(id); logSync('雲端刪除成功：' + id); return 'ok'; }
+      if (res && res.conflict) {
+        if (res.server) applyServerRecord(res.server);
+        logSync('⚠ 這筆在雲端已被他人修改，刪除中止，已載回雲端版本');
+        renderAll();
+        return 'conflict';
+      }
+      logSync('雲端刪除失敗：' + ((res && res.error) || '未知錯誤'));
+      return 'fail';
+    })
+    .catch(function(e) { logSync('雲端刪除錯誤：' + e.message); return 'fail'; });
+}
+
+// ── 保留舊函式名稱，內部改走增量介面 ──
+function syncDeleteToSheet(id) {
+  var a = null;
+  for (var i = 0; i < assignments.length; i++) { if (assignments[i].id === id) { a = assignments[i]; break; } }
+  return deleteAssignmentRemote(id, a ? a.updatedAt : '');
+}
 function syncAssignmentToSheet(record) {
-  try {
-    var url = getWebAppUrl();
-    if (!url) { console.warn('未設定 Web App URL，無法同步'); return; }
-    var user = getLoggedInUser();
-    var dataJson = JSON.stringify(record);
-    var syncUrl = url + (url.indexOf('?') === -1 ? '?' : '&') +
-      'action=addHrAssignment' +
-      '&data=' + encodeURIComponent(dataJson) +
-      '&maintainer=' + encodeURIComponent(user ? user.account : '');
-    fetch(syncUrl)
-      .then(function(r) { return r.json(); })
-      .then(function(data) {
-        if (data.success) {
-          console.log('✅ 派工已同步至 Google Sheets');
-          logSync('派工同步成功：' + record.person + ' ' + record.category);
-        } else {
-          console.warn('HR同步失敗:', data.error || '未知錯誤');
-          logSync('派工同步失敗：' + (data.error || '未知錯誤'));
-        }
-      })
-      .catch(function(err) {
-        console.warn('HR同步失敗:', err);
-        logSync('派工同步錯誤：' + err.message);
+  return upsertAssignment(record);
+}
+
+// ── 人員清單單獨儲存（不再連帶覆寫派工）──
+function savePersonnelRemote() {
+  setBadgeSyncing();
+  logSync('上傳人員清單...');
+  return apiPost({ action: 'savePersonnel', activePersonnel: activePersonnel })
+    .then(function(res) {
+      if (res && res.success) logSync('人員清單已更新（' + activePersonnel.length + ' 人）');
+      else logSync('人員清單上傳失敗：' + ((res && res.error) || '未知錯誤'));
+      updateSyncBadge();
+    })
+    .catch(function(e) { logSync('人員清單上傳錯誤：' + e.message); updateSyncBadge(); });
+}
+
+// ── 接收他人的變更（增量拉取）──
+function pullChanges(silent) {
+  if (!getWebAppUrl() || syncBusy || document.hidden) return Promise.resolve();
+  return apiGet('changesSince', { since: getCursor() })
+    .then(function(res) {
+      if (!res || !res.success) { if (!silent) logSync('接收變更失敗：' + ((res && res.error) || '未知錯誤')); return; }
+      var applied = 0, skipped = 0;
+      (res.changes || []).forEach(function(srv) {
+        if (hasLocalEdit(srv.id)) { skipped++; return; }   // 本機這筆還沒上傳，先不覆蓋
+        if (applyServerRecord(srv)) applied++;
       });
-  } catch(e) { console.warn('syncAssignmentToSheet error:', e); }
+      if (res.activePersonnel && res.activePersonnel.length) {
+        activePersonnel = sanitizeActive(res.activePersonnel);
+        localStorage.setItem('ndt_activePersonnel', JSON.stringify(activePersonnel));
+      }
+      setCursor(res.serverTime);
+      if (applied) { renderAll(); logSync('已接收他人變更 ' + applied + ' 筆' + (skipped ? '（' + skipped + ' 筆本機待上傳，暫不覆蓋）' : '')); }
+    })
+    .catch(function(e) { if (!silent) logSync('接收變更錯誤：' + e.message); });
 }
 
 // ============== DATA ==============
@@ -692,32 +833,63 @@ function testConnection() {
     });
 }
 
-function cloudSave() {
+function cloudSave(silent) {
   var url = getWebAppUrl();
-  if (!url) { alert('請先輸入 Web App 網址'); return; }
-  setBadgeSyncing();
-  logSync('上傳中...');
+  if (!url) { if (!silent) alert('請先輸入 Web App 網址'); return Promise.resolve(); }
+  if (syncBusy) { logSync('同步中，請稍候...'); return Promise.resolve(); }
 
-  var payload = {
-    action: 'saveHr',
-    activePersonnel: activePersonnel,
-    assignments: assignments
+  // 只上傳「和上次同步結果不同」的資料，不再整包覆寫雲端
+  var snap = getSnapshot();
+  var ids = {};
+  var upserts = [];
+  assignments.forEach(function(a) {
+    ids[a.id] = 1;
+    if (snap[a.id] !== recSig(a)) upserts.push(a);
+  });
+  var deletes = Object.keys(snap).filter(function(id) { return !ids[id]; });
+
+  if (!upserts.length && !deletes.length) { logSync('沒有變更，無需上傳'); updateSyncBadge(); return Promise.resolve(); }
+  if (deletes.length > 20 && !confirm('本機比雲端少了 ' + deletes.length + ' 筆，將同步刪除雲端這些紀錄。確定要繼續嗎？')) {
+    logSync('已取消刪除同步');
+    return Promise.resolve();
+  }
+
+  syncBusy = true;
+  setBadgeSyncing();
+  logSync('上傳中：新增/修改 ' + upserts.length + ' 筆，刪除 ' + deletes.length + ' 筆');
+
+  var stat = { ok: 0, conflict: 0, fail: 0 };
+  var queue = upserts.map(function(rec) { return function() { return upsertAssignment(rec); }; })
+    .concat(deletes.map(function(id) { return function() { return deleteAssignmentRemote(id, ''); }; }));
+
+  // 循序送出（一次一筆），避免 Apps Script 同時執行上限
+  var run = function(i) {
+    if (i >= queue.length) return Promise.resolve();
+    return queue[i]().then(function(r) {
+      if (r === 'ok') stat.ok++; else if (r === 'conflict') stat.conflict++; else stat.fail++;
+      return run(i + 1);
+    });
   };
 
-  fetch(url, {
-    method: 'POST',
-    mode: 'no-cors',
-    headers: { 'Content-Type': 'text/plain' },
-    body: JSON.stringify(payload)
-  })
-  .then(function() {
-    logSync('上傳完成（已發送至雲端）');
+  return run(0).then(function() {
+    syncBusy = false;
+    renderAll();
     updateSyncBadge();
-  })
-  .catch(function(err) {
-    logSync('上傳錯誤：' + err.message);
+    logSync('上傳完成：成功 ' + stat.ok + '、衝突 ' + stat.conflict + '、失敗 ' + stat.fail);
+    if (stat.fail && !silent) alert('有 ' + stat.fail + ' 筆未成功上傳，請看同步紀錄後再按一次上傳。');
+  }).catch(function(e) {
+    syncBusy = false;
     updateSyncBadge();
+    logSync('上傳中斷：' + e.message);
   });
+}
+
+// 舊的「整表覆寫」保留但預設停用；Apps Script 端也已把 saveHr 關閉。
+function legacyFullOverwrite() {
+  if (!confirm('⚠ 危險：這會用你本機的資料覆蓋整張雲端試算表，其他人未載入的資料會全部消失。確定嗎？')) return;
+  apiPost({ action: 'saveHr', force: true, activePersonnel: activePersonnel, assignments: assignments })
+    .then(function(res) { logSync(res && res.success ? '整表覆寫完成' : '整表覆寫被拒：' + ((res && res.error) || '')); rebuildSnapshot(); })
+    .catch(function(e) { logSync('整表覆寫錯誤：' + e.message); });
 }
 
 function cloudLoad(silent) {
@@ -746,6 +918,8 @@ function cloudLoad(silent) {
           });
           localStorage.setItem('ndt_assignments', JSON.stringify(assignments));
         }
+        rebuildSnapshot();                      // 以雲端內容為同步基準
+        setCursor(data.serverTime || new Date().toISOString());
         renderAll();
         logSync('載入成功！人員 ' + countStaff(activePersonnel) + ' 人（協力商 ' + (activePersonnel.length - countStaff(activePersonnel)) + ' 人），派工 ' + assignments.length + ' 筆');
       } else {
@@ -760,8 +934,9 @@ function cloudLoad(silent) {
 }
 
 function autoCloudSave() {
+  // 現在的 cloudSave 只送差異、且有衝突偵測，可安全自動執行
   if (isAutoSync() && getWebAppUrl()) {
-    cloudSave();
+    cloudSave(true);
   }
 }
 
@@ -807,7 +982,7 @@ function confirmPersonnel() {
   activePersonnel = checked;
   localStorage.setItem('ndt_activePersonnel', JSON.stringify(activePersonnel));
   renderAll();
-  autoCloudSave();
+  savePersonnelRemote();   // 只更新人員清單，不再連帶覆寫整張派工表
   var _cc = activePersonnel.length - countStaff(activePersonnel);
   alert('已更新！目前工作人員共 ' + countStaff(activePersonnel) + ' 人' + (_cc ? '（另有協力商 ' + _cc + ' 人）' : ''));
 }
@@ -868,8 +1043,6 @@ function addAssignment() {
       maintainer: maintainer
     };
     assignments.push(record);
-    // 每筆自動同步到 Google Sheets
-    syncAssignmentToSheet(record);
   });
 
   saveAssignments();
@@ -878,7 +1051,7 @@ function addAssignment() {
   document.getElementById('assignEmpId').value = '';
   document.getElementById('assignLocation').value = '';
   selectAllAssignPerson(false);
-  autoCloudSave();
+  cloudSave(true);   // 逐筆 upsert 剛剛新增的這幾筆（不動其他人的資料）
 }
 
 function saveAssignments() {
@@ -942,14 +1115,26 @@ function closeDeleteModal() {
 function clearAllAssignments() {
   var pwd = prompt('此操作將清除所有派工紀錄，請輸入密碼確認：');
   if (pwd === null) return;
-  if (pwd !== DELETE_PASSWORD) {
-    alert('密碼錯誤！');
-    return;
-  }
-  assignments = [];
-  saveAssignments();
-  renderAll();
-  autoCloudSave();
+  if (pwd !== DELETE_PASSWORD) { alert('密碼錯誤！'); return; }
+  if (assignments.length > 300) { alert('筆數過多（' + assignments.length + ' 筆），請直接在試算表操作，避免 Apps Script 逾時。'); return; }
+  if (!confirm('將逐筆刪除雲端 ' + assignments.length + ' 筆派工，確定？')) return;
+
+  syncBusy = true;
+  setBadgeSyncing();
+  var ids = assignments.map(function(a) { return a.id; });
+  var run = function(i) {
+    if (i >= ids.length) return Promise.resolve();
+    return deleteAssignmentRemote(ids[i], '').then(function() { return run(i + 1); });
+  };
+  run(0).then(function() {
+    syncBusy = false;
+    assignments = [];
+    saveAssignments();
+    rebuildSnapshot();
+    renderAll();
+    updateSyncBadge();
+    logSync('已清除全部派工');
+  });
 }
 
 // ============== RENDERING ==============
@@ -1425,13 +1610,23 @@ function resizeCalendar() {
   document.getElementById('autoSyncCheck').checked = localStorage.getItem('ndt_autoSync') === '1';
   updateSyncBadge();
 
-  // 進入頁面時自動從雲端載入（延遲 500ms 確保頁面完全加載，silent=true 不彈確認框）
+  // 進入頁面時：沒有同步游標（第一次用）才做整包載入，之後一律只拉增量
   setTimeout(function() {
-    if (savedUrl && savedUrl.trim() !== '') {
-      console.log('✓ 自動從雲端載入數據...');
+    if (!savedUrl || savedUrl.trim() === '') return;
+    if (!getCursor()) {
+      console.log('✓ 首次載入，從雲端完整載入...');
       cloudLoad(true);
+    } else {
+      console.log('✓ 增量接收他人變更...');
+      pullChanges(true);
     }
   }, 500);
+
+  // 每 60 秒接收一次他人的變更（分頁在背景時自動跳過）
+  setInterval(function() { pullChanges(true); }, 60 * 1000);
+  document.addEventListener('visibilitychange', function() {
+    if (!document.hidden) pullChanges(true);
+  });
 })();
 
 renderAll();
