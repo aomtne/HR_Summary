@@ -345,6 +345,11 @@ function isGuestUser() {
 //   3. 所有請求循序送出（不並發），避免 Apps Script 撞同時執行上限
 //   4. 一律讀取回應內容（不再用 mode:'no-cors'），失敗看得到原因
 var SYNC_TIMEOUT_MS = 15000;
+// ── Apps Script 網址設定（重新部署拿到新網址時，改這裡即可）──
+var DEFAULT_WEB_APP_URL = 'https://script.google.com/macros/s/AKfycbyZ9FjMauk7723dk5rZ7qlvFQRLoIImfSuZqDqfbImNpF7QtvlwjKhRIvWggPb_8yfr/exec';
+var LEGACY_WEB_APP_URLS = [
+  'https://script.google.com/macros/s/AKfycby0oIervhkmGpopOo12Bd43OuuMVc5T5kIPAA_QqZDwVU-M-QAN-86VlUeCZo5r-eoB6Q/exec'
+];
 var syncBusy = false;
 
 function fetchJSONRetry(url, opts, retries) {
@@ -360,7 +365,14 @@ function fetchJSONRetry(url, opts, retries) {
       })
       .then(function(t) {
         try { return JSON.parse(t); }
-        catch(e) { throw new Error('回傳不是 JSON（請確認 Apps Script 已部署新版本）'); }
+        catch(e) {
+          if (t.indexOf('Script function not found') !== -1) {
+            var fn = (t.match(/Script function not found:\s*(\w+)/) || [])[1] || 'doGet/doPost';
+            throw new Error('Apps Script 缺少 ' + fn + '（請在 GAS 補上該函式，並「管理部署作業 → 新版本」重新部署）');
+          }
+          if (/accounts\.google\.com|ServiceLogin/i.test(t)) throw new Error('需要登入 Google（部署存取權請設為「所有人」）');
+          throw new Error('回傳不是 JSON（請確認 Apps Script 已部署新版本）');
+        }
       })
       .catch(function(err) {
         clearTimeout(timer);
@@ -816,8 +828,7 @@ function testConnection() {
   setBadgeSyncing();
   logSync('測試連線中...');
   var testUrl = url + (url.indexOf('?') === -1 ? '?' : '&') + 'action=getAllAssignments&t=' + Date.now();
-  fetch(testUrl)
-    .then(function(r) { return r.json(); })
+  fetchJSONRetry(testUrl, null, 0)
     .then(function(data) {
       if (data.success) {
         logSync('連線成功！派工 ' + (data.assignments || []).length + ' 筆');
@@ -900,8 +911,7 @@ function cloudLoad(silent) {
   logSync(silent ? '自動載入中...' : '載入中...');
 
   var loadUrl = url + (url.indexOf('?') === -1 ? '?' : '&') + 'action=getAllAssignments&t=' + Date.now();
-  fetch(loadUrl)
-    .then(function(r) { return r.json(); })
+  fetchJSONRetry(loadUrl, null, 0)
     .then(function(data) {
       if (data.success) {
         if (data.activePersonnel && data.activePersonnel.length > 0) {
@@ -1605,7 +1615,12 @@ function resizeCalendar() {
 // ============== INIT ==============
 // Restore cloud config
 (function() {
-  var savedUrl = localStorage.getItem('ndt_webAppUrl') || 'https://script.google.com/macros/s/AKfycby0oIervhkmGpopOo12Bd43OuuMVc5T5kIPAA_QqZDwVU-M-QAN-86VlUeCZo5r-eoB6Q/exec';
+  var savedUrl = (localStorage.getItem('ndt_webAppUrl') || '').trim();
+  // 沒存過、或存的是舊部署網址 → 自動換成目前的正式網址
+  if (!savedUrl || LEGACY_WEB_APP_URLS.indexOf(savedUrl) !== -1) {
+    savedUrl = DEFAULT_WEB_APP_URL;
+    localStorage.setItem('ndt_webAppUrl', savedUrl);
+  }
   document.getElementById('webAppUrl').value = savedUrl;
   document.getElementById('autoSyncCheck').checked = localStorage.getItem('ndt_autoSync') === '1';
   updateSyncBadge();
@@ -1703,7 +1718,7 @@ function fetchFromGoogleSheets() {
     return;
   }
   var url = webAppUrl + (webAppUrl.indexOf('?') === -1 ? '?' : '&') + 'action=getAllAssignments&t=' + Date.now();
-  fetch(url).then(function(response) { return response.json(); }).then(function(data) {
+  fetchJSONRetry(url, null, 0).then(function(data) {
     console.log('✅ 從 Google Sheets 成功取得派工數據: ' + (data.assignments ? data.assignments.length : 0) + ' 條');
     convertGoogleSheetsToLocal(data);
     extractScheduleFromLocalData();
